@@ -1,1 +1,1 @@
-../plarena/test-0406-plist.c
+../nspr-arena-32bit/test-0406-plist-simplified.c

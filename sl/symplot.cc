@@ -26,7 +26,7 @@
 
 #include "plotenum.hh"
 #include "symheap.hh"
-#include "symneq.hh"
+#include "sympred.hh"
 #include "symseg.hh"
 #include "util.hh"
 #include "worklist.hh"
@@ -104,22 +104,25 @@ void digValues(PlotData &plot, const TValList &startingPoints, bool digForward)
     }
 }
 
-void plotOffset(PlotData &plot, const TOffset off, const int from, const int to)
-{
-    const bool isAboveRoot = (off < 0);
-    const char *color = (isAboveRoot)
-        ? "red"
-        : "black";
-
-    const char *prefix = (isAboveRoot)
+inline const char* offPrefix(const TOffset off) {
+    return (off < 0)
         ? ""
         : "+";
+}
+
+#define SIGNED_OFF(off) offPrefix(off) << (off)
+
+void plotOffset(PlotData &plot, const TOffset off, const int from, const int to)
+{
+    const char *color = (off < 0)
+        ? "red"
+        : "black";
 
     plot.out << "\t" << SL_QUOTE(from)
         << " -> " << SL_QUOTE(to)
         << " [color=" << color
         << ", fontcolor=" << color
-        << ", label=\"[" << prefix << off
+        << ", label=\"[" << SIGNED_OFF(off)
         << "]\"];\n";
 }
 
@@ -250,9 +253,25 @@ void describeObject(PlotData &plot, const ObjHandle &obj, const bool lonely) {
     plot.out << " " << tag << "#" << obj.objId();
 }
 
+void printRawRange(
+        std::ostream                &str,
+        const IR::Range             &rng,
+        const char                  *suffix = "")
+{
+    if (isSingular(rng)) {
+        str << rng.lo << suffix;
+        return;
+    }
+
+    str << rng.lo << suffix << " .. " << rng.hi << suffix;
+
+    if (isAligned(rng))
+        str << ", alignment = " << rng.alignment << suffix;
+}
+
 void plotRootValue(PlotData &plot, const TValId val, const char *color) {
     SymHeap &sh = plot.sh;
-    const unsigned size = sh.valSizeOfTarget(val);
+    const TSizeRange size = sh.valSizeOfTarget(val);
 
     // visualize the count of references as pen width
     const float pw = static_cast<float>(1U + sh.usedByCount(val));
@@ -268,7 +287,9 @@ void plotRootValue(PlotData &plot, const TValId val, const char *color) {
     else
         plot.out << "#" << val;
 
-    plot.out << " [size = " << size << " B]\"];\n";
+    plot.out << " [size = ";
+    printRawRange(plot.out, size, " B");
+    plot.out << "]\"];\n";
 }
 
 enum EObjectClass {
@@ -395,7 +416,8 @@ void plotUniformBlocks(PlotData &plot, const TValId root) {
     }
 }
 
-void plotInnerObjects(PlotData &plot, const TValId at, const ObjList &liveObjs)
+template <class TCont>
+void plotInnerObjects(PlotData &plot, const TValId at, const TCont &liveObjs)
 {
     SymHeap &sh = plot.sh;
 
@@ -474,7 +496,7 @@ std::string labelOfCompObj(const SymHeap &sh, const TValId root) {
     }
 
     // append minimal segment length
-    const unsigned len = sh.segMinLength(root);
+    const TMinLen len = sh.segMinLength(root);
     std::ostringstream str;
     str << " " << len << "+";
     label += str.str();
@@ -482,7 +504,8 @@ std::string labelOfCompObj(const SymHeap &sh, const TValId root) {
     return label;
 }
 
-void plotCompositeObj(PlotData &plot, const TValId at, const ObjList &liveObjs)
+template <class TCont>
+void plotCompositeObj(PlotData &plot, const TValId at, const TCont &liveObjs)
 {
     SymHeap &sh = plot.sh;
 
@@ -568,9 +591,15 @@ void plotDlSeg(PlotData &plot, const TValId seg, const ObjList &liveObjs) {
     // plot the corresponding peer
     const TValId peer = dlSegPeer(sh, seg);
     if (OK_DLS == sh.valTargetKind(peer)) {
+#if SYMPLOT_OMIT_NEQ_EDGES
+        TObjSet bindPtrs;
+        buildIgnoreList(bindPtrs, sh, peer);
+        plotCompositeObj(plot, peer, bindPtrs);
+#else
         ObjList liveObjsAtPeer;
         sh.gatherLiveObjects(liveObjsAtPeer, peer);
         plotCompositeObj(plot, peer, liveObjsAtPeer);
+#endif
     }
 
     // close the cluster
@@ -613,9 +642,13 @@ void plotRootObjects(PlotData &plot) {
                         // root pointed
                         break;
 
+                    // TODO: support for objects with variable size?
+                    const TSizeRange size = sh.valSizeOfTarget(root);
+                    CL_BREAK_IF(!isSingular(size));
+
                     const TObjType clt = obj.objType();
                     CL_BREAK_IF(!clt);
-                    if (clt->size != sh.valSizeOfTarget(root))
+                    if (clt->size != size.lo)
                         // size mismatch detected
                         break;
 
@@ -671,10 +704,18 @@ const char* labelByTarget(const EValueTarget code) {
     return "";
 }
 
-void describeInt(PlotData &plot, const long num, const TValId val) {
+void describeInt(PlotData &plot, const IR::TInt num, const TValId val) {
     plot.out << ", fontcolor=red, label=\"[int] "
         << num << " (#"
         << val << ")\"";
+}
+
+void describeIntRange(PlotData &plot, const IR::Range &rng, const TValId val) {
+    plot.out << ", fontcolor=blue, label=\"[int range] ";
+
+    printRawRange(plot.out, rng);
+    
+    plot.out << " (#" << val << ")\"";
 }
 
 void describeReal(PlotData &plot, const float fpn, const TValId val) {
@@ -701,13 +742,10 @@ void describeStr(PlotData &plot, const char *str, const TValId val) {
         << val << ")\"";
 }
 
-void plotCustomValue(PlotData &plot, const TObjId obj, const TValId val) {
+void describeCustomValue(PlotData &plot, const TValId val) {
     SymHeap &sh = plot.sh;
     const CustomValue cVal = sh.valUnwrapCustom(val);
     const CustomValueData &data = cVal.data;
-
-    const int id = ++plot.last;
-    plot.out << "\t" << SL_QUOTE("lonely" << id) << " [shape=plaintext";
 
     const ECustomValue code = cVal.code;
     switch (code) {
@@ -715,8 +753,11 @@ void plotCustomValue(PlotData &plot, const TObjId obj, const TValId val) {
             plot.out << ", fontcolor=red, label=CV_INVALID";
             break;
 
-        case CV_INT:
-            describeInt(plot, data.num, val);
+        case CV_INT_RANGE:
+            if (isSingular(data.rng))
+                describeInt(plot, data.rng.lo, val);
+            else
+                describeIntRange(plot, data.rng, val);
             break;
 
         case CV_REAL:
@@ -730,10 +771,14 @@ void plotCustomValue(PlotData &plot, const TObjId obj, const TValId val) {
         case CV_STRING:
             describeStr(plot, data.str, val);
             break;
-
-        case CV_INT_RANGE:
-            CL_BREAK_IF("please implement");
     }
+}
+
+void plotCustomValue(PlotData &plot, const TObjId obj, const TValId val) {
+    const int id = ++plot.last;
+    plot.out << "\t" << SL_QUOTE("lonely" << id) << " [shape=plaintext";
+
+    describeCustomValue(plot, val);
 
     plot.out << "];\n\t" << SL_QUOTE(obj)
         << " -> " << SL_QUOTE("lonely" << id)
@@ -749,9 +794,6 @@ void plotValue(PlotData &plot, const TValId val)
 
     const EValueTarget code = sh.valTarget(val);
     switch (code) {
-        case VT_RANGE:
-            CL_BREAK_IF("please implement");
-
         case VT_CUSTOM:
             // skipt it, custom values are now handled in plotHasValue()
             return;
@@ -760,6 +802,7 @@ void plotValue(PlotData &plot, const TValId val)
         case VT_COMPOSITE:
         case VT_LOST:
         case VT_DELETED:
+        case VT_RANGE:
             color = "red";
             break;
 
@@ -792,10 +835,22 @@ preserve_suffix:
     if (suffix)
         plot.out << " " << suffix;
 
-    const TOffset off = sh.valOffset(val);
-    if (off) {
-        const TValId root = sh.valRoot(val);
-        plot.out << " [root = #" << root << ", off = " << off << "]";
+    const TValId root = sh.valRoot(val);
+
+    if (VT_RANGE == code) {
+        const IR::Range &offRange = sh.valOffsetRange(val);
+        plot.out << " [root = #" << root
+            << ", off = " << offRange.lo << ".." << offRange.hi;
+
+        if (isAligned(offRange))
+            plot.out << ", alignment = " << offRange.alignment;
+    
+        plot.out << "]";
+    }
+    else {
+        const TOffset off = sh.valOffset(val);
+        if (off)
+            plot.out << " [root = #" << root << ", off = " << off << "]";
     }
 
     plot.out << "\"];\n";
@@ -805,6 +860,16 @@ void plotPointsTo(PlotData &plot, const TValId val, const TObjId target) {
     plot.out << "\t" << SL_QUOTE(val)
         << " -> " << SL_QUOTE(target)
         << " [color=green, fontcolor=green];\n";
+}
+
+void plotRangePtr(PlotData &plot, TValId val, TValId root, const IR::Range &rng)
+{
+    plot.out << "\t" << SL_QUOTE(val) << " -> " << SL_QUOTE(root)
+        << " [color=red, fontcolor=red, label=\"[";
+
+    printRawRange(plot.out, rng);
+    
+    plot.out << "]\"];\n";
 }
 
 void plotNonRootValues(PlotData &plot) {
@@ -820,8 +885,13 @@ void plotNonRootValues(PlotData &plot) {
         plotValue(plot, val);
 
         const TValId root = sh.valRoot(val);
-        const EValueTarget code = sh.valTarget(root);
-        if (!isPossibleToDeref(code))
+        const EValueTarget code = sh.valTarget(val);
+        if (VT_RANGE == code) {
+            const IR::Range &rng = sh.valOffsetRange(val);
+            plotRangePtr(plot, val, root, rng);
+            continue;
+        }
+        else if (!isPossibleToDeref(code))
             // no valid target
             continue;
 
@@ -945,6 +1015,19 @@ void plotNeqZero(PlotData &plot, const TValId val) {
         ", penwidth=2.0];\n";
 }
 
+void plotNeqCustom(PlotData &plot, const TValId val, const TValId valCustom) {
+    const int id = ++plot.last;
+    plot.out << "\t" << SL_QUOTE("lonely" << id)
+        << " [shape=plaintext";
+
+    describeCustomValue(plot, valCustom);
+
+    plot.out << "];\n\t" << SL_QUOTE(val)
+        << " -> " << SL_QUOTE("lonely" << id)
+        << " [color=red, fontcolor=gold, label=neq style=dashed"
+        ", penwidth=2.0];\n";
+}
+
 void plotNeq(std::ostream &out, const TValId v1, const TValId v2) {
     out << "\t" << SL_QUOTE(v1)
         << " -> " << SL_QUOTE(v2)
@@ -952,7 +1035,7 @@ void plotNeq(std::ostream &out, const TValId v1, const TValId v2) {
         ", label=neq, fontcolor=gold, constraint=false];\n";
 }
 
-class NeqPlotter: public NeqDb {
+class NeqPlotter: public SymPairSet<TValId, /* IREFLEXIVE */ true> {
     public:
         void plotNeqEdges(PlotData &plot) {
             BOOST_FOREACH(const TItem &item, cont_) {
@@ -961,6 +1044,10 @@ class NeqPlotter: public NeqDb {
 
                 if (VAL_NULL == v1)
                     plotNeqZero(plot, v2);
+                else if (VT_CUSTOM == plot.sh.valTarget(v2))
+                    plotNeqCustom(plot, v1, v2);
+                else if (VT_CUSTOM == plot.sh.valTarget(v1))
+                    plotNeqCustom(plot, v2, v1);
                 else
                     plotNeq(plot.out, v1, v2);
             }
@@ -1009,7 +1096,9 @@ void plotEverything(PlotData &plot) {
         TValList relatedVals;
         sh.gatherRelatedValues(relatedVals, val);
         BOOST_FOREACH(const TValId rel, relatedVals)
-            if (VAL_NULL == rel || hasKey(plot.values, rel))
+            if (VAL_NULL == rel
+                    || hasKey(plot.values, rel)
+                    || VT_CUSTOM == sh.valTarget(rel))
                 np.add(val, rel);
     }
 
@@ -1020,6 +1109,7 @@ void plotEverything(PlotData &plot) {
 bool plotHeap(
         const SymHeap                   &sh,
         const std::string               &name,
+        const struct cl_loc             *loc,
         const TValList                  &startingPoints,
         const bool                      digForward)
 {
@@ -1046,8 +1136,12 @@ bool plotHeap(
         return false;
     }
 
+    if (loc)
+        CL_NOTE_MSG(loc, "writing heap graph to '" << fileName << "'...");
+    else
+        CL_DEBUG("writing heap graph to '" << fileName << "'...");
+
     // initialize an instance of PlotData
-    CL_NOTE("symplot: created dot file '" << fileName << "'");
     PlotData plot(sh, out);
 
     // do our stuff
@@ -1063,9 +1157,10 @@ bool plotHeap(
 
 bool plotHeap(
         const SymHeap                   &sh,
-        const std::string               &name)
+        const std::string               &name,
+        const struct cl_loc             *loc)
 {
     TValList roots;
     sh.gatherRootObjects(roots);
-    return plotHeap(sh, name, roots);
+    return plotHeap(sh, name, loc, roots);
 }

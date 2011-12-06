@@ -442,6 +442,7 @@ static void read_base_type(struct cl_type *clt, tree type)
 {
     // store sizeof
     clt->size = get_type_sizeof(type);
+    clt->is_unsigned = TYPE_UNSIGNED(type);
 
     tree name = TYPE_NAME(type);
     if (NULL_TREE == name)
@@ -2072,7 +2073,7 @@ int plugin_init (struct plugin_name_args *plugin_info,
         CL_ERROR("host gcc's version/build mismatch"
                  ", call-backs not registered!");
 
-        return 0;
+        return 1;
     }
 
     // initialize code listener
