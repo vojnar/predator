@@ -24,10 +24,6 @@
 #include <set>
 #include <algorithm>
 
-// Boost headers
-//#include <boost/unordered_set.hpp>
-//#include <boost/unordered_map.hpp>
-
 // Code Listener headers
 #include <cl/code_listener.h>
 #include <cl/cl_msg.hh>
