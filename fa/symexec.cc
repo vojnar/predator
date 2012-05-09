@@ -786,14 +786,15 @@ protected:
 		out = {};
 		VirtualMachine vm(fae);
 		size_t root = vm.varGet(ABP_INDEX).d_ref.root;
-		auto& t = fae.roots[root]->getAcceptingTransition();
-		int n = 0;
-		for (auto i = t.lhs().begin(); i != t.lhs().end(); ++i)
+		assert(root < fae.roots.size());
+		if (fae.roots[root])
 		{
-			out.push_back(fae.getData(*i));
+			auto& t = fae.roots[root]->getAcceptingTransition();
+			for (auto i = t.lhs().begin(); i != t.lhs().end(); ++i)
+			{
+				out.push_back(fae.getData(*i));
+			}
 		}
-
-		n++;
 	}
 
 	static void collectTA(std::vector<string>& ta, string& fae)
@@ -1066,9 +1067,9 @@ protected:
 
 			for (size_t i = 0; i < statelist.size(); i++)
 			{
-				refineStatements(statelist.at(i), condTraceList.at(i));
-				Engine::printTrace2(statelist.at(i));
-				Engine::printTATrace(statelist.at(i),vars,absTraceList.at(i),boxTraceList.at(i));
+				refineStatements(statelist[i], condTraceList[i]);
+				Engine::printTrace2(statelist[i]);
+				Engine::printTATrace(statelist[i] ,vars, absTraceList[i], boxTraceList[i]);
 			}
 
 			return true;
