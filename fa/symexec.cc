@@ -354,9 +354,9 @@ protected:
 
 		for (size_t i = 0; i < execMan.condQueue_.size(); ++i)
 		{
-			if(execMan.condQueue_.at(i).first == state)
+			if (execMan.condQueue_[i].first == state)
 			{
-				status =  execMan.condQueue_.at(i).second;
+				status =  execMan.condQueue_[i].second;
 			}
 		}
 	}
@@ -369,10 +369,10 @@ protected:
 
 		for (size_t i = 0; i < execMan.absQueue_.size(); i++)
 		{
-			if (execMan.absQueue_.at(i).first == state)
+			if (execMan.absQueue_[i].first == state)
 			{
 				status = 1;
-				absFaes = execMan.absQueue_.at(i).second;
+				absFaes = execMan.absQueue_[i].second;
 			}
 		}
 	}
@@ -395,10 +395,10 @@ protected:
 
 		for (size_t i = 0; i < trace.size()-1; i++)
 		{
-			if (trace.at(i)->instr->insn())
+			if (trace[i]->instr->insn())
 			{
-				std::cerr << "     " << *trace.at(i)->instr->insn() << "-------"
-					<< *trace.at(i)->instr << std::endl;
+				std::cerr << "     " << *trace[i]->instr->insn() << "-------"
+					<< *trace[i]->instr << std::endl;
 			}
 		}
 	}
@@ -474,7 +474,7 @@ protected:
 				}
 
 				ss1 << *s->fae;
-				statements.push_back(pair<FAE,string>(*s->fae,ss.str()));
+				statements.push_back(std::make_pair(*s->fae,ss.str()));
 				size++;
 			}
 
@@ -504,9 +504,9 @@ protected:
 		int size = 0;
 		for (size_t i = 0; i < statements.size(); i++)
 		{
-			if (statements.at(i).second.find("deleted") == string::npos)
+			if (statements[i].second.find("deleted") == string::npos)
 			{
-				std::cerr << statements.at(i).second << std::endl;
+				std::cerr << statements[i].second << std::endl;
 			}
 
 			size++;
@@ -520,104 +520,104 @@ protected:
 		{
 			if (i+2 < instructions.size())
 			{
-				if (instructions.at(i).second.find("nondet") != string::npos
-					&& instructions.at(i+2).second.find("if")!=string::npos)
+				if (instructions[i].second.find("nondet") != string::npos
+					&& instructions[i+2].second.find("if")!=string::npos)
 				{
-					if(instructions.at(i).second.find("--abs") == string::npos)
+					if (instructions[i].second.find("--abs") == string::npos)
 					{
-						instructions.at(i) = std::make_pair(instructions.at(i).first, "deleted");
+						instructions[i] = std::make_pair(instructions[i].first, "deleted");
 					}
 
-					instructions.at(i+1) = std::make_pair(instructions.at(i+1).first, "deleted");
-					instructions.at(i+2) = std::make_pair(instructions.at(i+2).first, "Check (ND) "
-						+ condTrace.at(i+3));
+					instructions[i+1] = std::make_pair(instructions[i+1].first, "deleted");
+					instructions[i+2] = std::make_pair(instructions[i+2].first, "Check (ND) "
+						+ condTrace[i+3]);
 
 					continue;
 				}
 			}
 
-			if (instructions.at(i).second.find("if") != string::npos)
+			if (instructions[i].second.find("if") != string::npos)
 			{
-				int x = int(instructions.at(i).second.find("("));
-				int y = int(instructions.at(i).second.find(")"));
-				string z = instructions.at(i).second.substr(x+1, y-x - 1);
-				string s = instructions.at(i).second.substr(y);
+				int x = int(instructions[i].second.find("("));
+				int y = int(instructions[i].second.find(")"));
+				string z = instructions[i].second.substr(x+1, y-x - 1);
+				string s = instructions[i].second.substr(y);
 				string expression;
 
-				if (instructions.at(i-1).second.find(z) != string::npos)
+				if (instructions[i-1].second.find(z) != string::npos)
 				{
-					x = int(instructions.at(i-1).second.find("("));
+					x = int(instructions[i-1].second.find("("));
 					string exp;
-					if (instructions.at(i-1).second.find("==") != string::npos)
+					if (instructions[i-1].second.find("==") != string::npos)
 					{
-						y = int(instructions.at(i-1).second.find("=="));
+						y = int(instructions[i-1].second.find("=="));
 						exp = "==";
 					}
-					if (instructions.at(i-1).second.find("<=") != string::npos)
+					if (instructions[i-1].second.find("<=") != string::npos)
 					{
-						y = int(instructions.at(i-1).second.find("<="));
+						y = int(instructions[i-1].second.find("<="));
 						exp = "<=";
 					}
-					if(instructions.at(i-1).second.find("< ") != string::npos)
+					if(instructions[i-1].second.find("< ") != string::npos)
 					{
-						y = int(instructions.at(i-1).second.find("< "));
+						y = int(instructions[i-1].second.find("< "));
 						exp = "< ";
 					}
-					if(instructions.at(i-1).second.find("!=") != string::npos)
+					if(instructions[i-1].second.find("!=") != string::npos)
 					{
-						y = int(instructions.at(i-1).second.find("!="));
+						y = int(instructions[i-1].second.find("!="));
 						exp = "!=";
 					}
-					int t = int(instructions.at(i-1).second.find(")"));
+					int t = int(instructions[i-1].second.find(")"));
 					string left;
 					string right;
 					// for case of full expression
-					if (instructions.at(i-1).second.substr(x,y-x).find(":") == string::npos
-						&& instructions.at(i-1).second.substr(y,t-y).find(":")==string::npos
-						&& instructions.at(i-1).second.substr(y,t-y).find("NULL")==string::npos)
+					if (instructions[i-1].second.substr(x,y-x).find(":") == string::npos
+						&& instructions[i-1].second.substr(y,t-y).find(":")==string::npos
+						&& instructions[i-1].second.substr(y,t-y).find("NULL")==string::npos)
 					{
-						if (instructions.at(i-3).second.find(instructions.at(i-1).second.substr(x+1,y-x-1)) != string::npos)
+						if (instructions[i-3].second.find(instructions[i-1].second.substr(x+1,y-x-1)) != string::npos)
 						{
-							int x1 = int(instructions.at(i-3).second.find("="));
-							left = instructions.at(i-3).second.substr(x1);
+							int x1 = int(instructions[i-3].second.find("="));
+							left = instructions[i-3].second.substr(x1);
 							if (left.find("#") != string::npos)
 							{
 								left = left.substr(int(left.find(":"))+1);
 							}
-							instructions.at(i-3) = std::make_pair(instructions.at(i-3).first, "deleted");
+							instructions[i-3] = std::make_pair(instructions[i-3].first, "deleted");
 						}
-						if (instructions.at(i-2).second.find(instructions.at(i-1).second.substr(y+3, t-y-3)) != string::npos)
+						if (instructions[i-2].second.find(instructions[i-1].second.substr(y+3, t-y-3)) != string::npos)
 						{
-							int x2 = int(instructions.at(i-2).second.find("="));
-							right = instructions.at(i-2).second.substr(x2);
+							int x2 = int(instructions[i-2].second.find("="));
+							right = instructions[i-2].second.substr(x2);
 							if (right.find("#") != string::npos)
 							{
 								right = right.substr(int(right.find(":"))+1);
 							}
-							instructions.at(i-2) = pair<FAE,string>(instructions.at(i-2).first, "deleted");
+							instructions[i-2] = pair<FAE,string>(instructions[i-2].first, "deleted");
 						}
 						expression = left + exp + right;
-						instructions.at(i) = std::make_pair(instructions.at(i).first,"Check (" + expression + ")" + condTrace.at(i+1));
-						if (instructions.at(i-1).second.find("--abs") == string::npos)
+						instructions[i] = std::make_pair(instructions[i].first,"Check (" + expression + ")" + condTrace[i+1]);
+						if (instructions[i-1].second.find("--abs") == string::npos)
 						{
-							instructions.at(i-1) = std::make_pair(instructions.at(i-1).first, "deleted");
+							instructions[i-1] = std::make_pair(instructions[i-1].first, "deleted");
 						}
 					}
 					else
 					{
-						if (instructions.at(i-1).second.substr(x,y-x).find(":")==string::npos)
+						if (instructions[i-1].second.substr(x,y-x).find(":")==string::npos)
 						{
-							int x1 = int(instructions.at(i-2).second.find("="));
-							left = instructions.at(i-2).second.substr(x1);
+							int x1 = int(instructions[i-2].second.find("="));
+							left = instructions[i-2].second.substr(x1);
 							if (left.find("#") != string::npos)
 							{
 								left = left.substr(int(left.find(":"))+1);
 							}
 
-							if (instructions.at(i-1).second.substr(y,t-y).find("NULL") == string::npos)
+							if (instructions[i-1].second.substr(y,t-y).find("NULL") == string::npos)
 							{
-								int x2 = int(instructions.at(i-1).second.find(":"));
-								right = instructions.at(i-1).second.substr(x2+1,1);
+								int x2 = int(instructions[i-1].second.find(":"));
+								right = instructions[i-1].second.substr(x2+1,1);
 							}
 							else
 							{
@@ -625,42 +625,42 @@ protected:
 							}
 
 							expression = left + exp + right;
-							instructions.at(i) = std::make_pair(instructions.at(i).first,
-								"Check (" + expression + ")" + condTrace.at(i+1));
+							instructions[i] = std::make_pair(instructions[i].first,
+								"Check (" + expression + ")" + condTrace[i+1]);
 
-							instructions.at(i-2) = pair<FAE,string>(instructions.at(i-2).first, "deleted");
-							if (instructions.at(i-1).second.find("--abs") == string::npos)
+							instructions[i-2] = std::make_pair(instructions[i-2].first, "deleted");
+							if (instructions[i-1].second.find("--abs") == string::npos)
 							{
-								instructions.at(i-1) = std::make_pair(instructions.at(i-1).first, "deleted");
+								instructions[i-1] = std::make_pair(instructions[i-1].first, "deleted");
 							}
 						}
 						else
 						{
-							if (instructions.at(i-1).second.substr(y,t-y).find(":")!=string::npos)
+							if (instructions[i-1].second.substr(y,t-y).find(":") != string::npos)
 							{
-								int x1 = int(instructions.at(i-1).second.substr(x,y-x).find(":"));
-								left = instructions.at(i-1).second.substr(x,y-x).substr(x1+1,1);
-								int x2 = int(instructions.at(i-1).second.substr(y,t-y).find(":"));
-								right = instructions.at(i-1).second.substr(y,t-y).substr(x2+1,1);
+								int x1 = int(instructions[i-1].second.substr(x,y-x).find(":"));
+								left = instructions[i-1].second.substr(x,y-x).substr(x1+1,1);
+								int x2 = int(instructions[i-1].second.substr(y,t-y).find(":"));
+								right = instructions[i-1].second.substr(y,t-y).substr(x2+1,1);
 								expression = left + exp + right;
-								instructions.at(i) = std::make_pair(instructions.at(i).first,"Check (" + expression + ")"
-										+ condTrace.at(i+1));
-								if (instructions.at(i-1).second.find("--abs") == string::npos)
+								instructions[i] = std::make_pair(instructions[i].first,"Check (" + expression + ")"
+										+ condTrace[i+1]);
+								if (instructions[i-1].second.find("--abs") == string::npos)
 								{
-									instructions.at(i-1) = std::make_pair(instructions.at(i-1).first, "deleted");
+									instructions[i-1] = std::make_pair(instructions[i-1].first, "deleted");
 								}
 							}
 							else
 							{
-								int x1 = int(instructions.at(i-1).second.substr(x,y-x).find(":"));
-								left = instructions.at(i-1).second.substr(x,y-x).substr(x1+1,1);
+								int x1 = int(instructions[i-1].second.substr(x,y-x).find(":"));
+								left = instructions[i-1].second.substr(x,y-x).substr(x1+1,1);
 								right = "NULL";
 								expression = left + exp + right;
-								instructions.at(i) = std::make_pair(instructions.at(i).first,"Check (" + expression + ")"
-										+ condTrace.at(i+1));
-								if (instructions.at(i-1).second.find("--abs") == string::npos)
+								instructions[i] = std::make_pair(instructions[i].first,"Check (" + expression + ")"
+										+ condTrace[i+1]);
+								if (instructions[i-1].second.find("--abs") == string::npos)
 								{
-									instructions.at(i-1) = std::make_pair(instructions.at(i-1).first, "deleted");
+									instructions[i-1] = std::make_pair(instructions[i-1].first, "deleted");
 								}
 							}
 						}
@@ -668,21 +668,21 @@ protected:
 				}
 			}
 
-			if (instructions.at(i).second.find("malloc") != string::npos)
+			if (instructions[i].second.find("malloc") != string::npos)
 			{	// malloc
-				instructions.at(i) = std::make_pair(instructions.at(i).first,"Node* "
-					+ instructions.at(i).second.substr(int(instructions.at(i).second.find(":"))+1,1)
+				instructions[i] = std::make_pair(instructions[i].first,"Node* "
+					+ instructions[i].second.substr(int(instructions[i].second.find(":"))+1,1)
 					+ " = New Node()");
 			}
 			else
 			{	// assignment
-				if (instructions.at(i).second.find("=")!=string::npos)
+				if (instructions[i].second.find("=")!=string::npos)
 				{
-					if (instructions.at(i).second.find(":")!=string::npos
-						&& int(instructions.at(i).second.find("=")) > int(instructions.at(i).second.find(":")))
+					if (instructions[i].second.find(":")!=string::npos
+						&& int(instructions[i].second.find("=")) > int(instructions[i].second.find(":")))
 					{
-						int x = int(instructions.at(i).second.find(":"));
-						string first = instructions.at(i).second.substr(x+1);
+						int x = int(instructions[i].second.find(":"));
+						string first = instructions[i].second.substr(x+1);
 						string left, right;
 						if (first.find(":")!=string::npos)
 						{
@@ -690,60 +690,60 @@ protected:
 							int z = int(first.find("#"));
 							left = first.substr(0,z);
 							right = first.substr(y+1);
-							instructions.at(i) = pair<FAE,string>(instructions.at(i).first,left + right);
+							instructions[i] = std::make_pair(instructions[i].first,left + right);
 						}
 						else
 						{
-							instructions.at(i) = pair<FAE,string>(instructions.at(i).first,first);
+							instructions[i] = std::make_pair(instructions[i].first,first);
 						}
 					}
 				}
 			}
 
-			if (instructions.at(i).second.find("free") != string::npos)
+			if (instructions[i].second.find("free") != string::npos)
 			{	// free
-				int x = int(instructions.at(i).second.find(":"));
-				instructions.at(i) = pair<FAE,string>(instructions.at(i).first,"Free("
-					+ instructions.at(i).second.substr(x+1,1) + ")");
+				int x = int(instructions[i].second.find(":"));
+				instructions[i] = pair<FAE,string>(instructions[i].first,"Free("
+					+ instructions[i].second.substr(x+1,1) + ")");
 			}
-			if (instructions.at(i).second.find("(int)0") != string::npos
-				&& instructions.at(i+1).second.find("return") != string::npos)
+			if (instructions[i].second.find("(int)0") != string::npos
+				&& instructions[i+1].second.find("return") != string::npos)
 			{	// return
-				instructions.at(i) = pair<FAE,string>(instructions.at(i).first,"deleted");
-				instructions.at(i+1) = pair<FAE,string>(instructions.at(i+1).first,"Return 0");
+				instructions[i] = pair<FAE,string>(instructions[i].first,"deleted");
+				instructions[i+1] = pair<FAE,string>(instructions[i+1].first,"Return 0");
 			}
-			if (instructions.at(i).second.find("(int)1") != string::npos
-				&& instructions.at(i+1).second.find("return") != string::npos)
+			if (instructions[i].second.find("(int)1") != string::npos
+				&& instructions[i+1].second.find("return") != string::npos)
 			{
-				instructions.at(i) = pair<FAE,string>(instructions.at(i).first,"deleted");
-				instructions.at(i+1) = pair<FAE,string>(instructions.at(i+1).first,"Return 1");
+				instructions[i] = std::make_pair(instructions[i].first,"deleted");
+				instructions[i+1] = std::make_pair(instructions[i+1].first,"Return 1");
 			}
 		}
 
 		for (size_t i = 0; i < instructions.size()-1; i++)
 		{
-			if (instructions.at(i).second.find("#") != string::npos)
+			if (instructions[i].second.find("#") != string::npos)
 			{
 				int x,y;
-				x = int(instructions.at(i).second.find("#"));
-				y = int(instructions.at(i).second.find("="));
-				string right = instructions.at(i).second.substr(x,y-x-1);
-				if (instructions.at(i+1).second.find(right) != string::npos)
+				x = int(instructions[i].second.find("#"));
+				y = int(instructions[i].second.find("="));
+				string right = instructions[i].second.substr(x,y-x-1);
+				if (instructions[i+1].second.find(right) != string::npos)
 				{
-					y = int(instructions.at(i).second.find(":"));
-					right = instructions.at(i).second.substr(y+1);
-					x = int(instructions.at(i+1).second.find(":"));
-					y = int(instructions.at(i+1).second.find("="));
-					string left = instructions.at(i+1).second.substr(0,y-1);
-					instructions.at(i+1) = pair<FAE,string>(instructions.at(i+1).first,left
+					y = int(instructions[i].second.find(":"));
+					right = instructions[i].second.substr(y+1);
+					x = int(instructions[i+1].second.find(":"));
+					y = int(instructions[i+1].second.find("="));
+					string left = instructions[i+1].second.substr(0,y-1);
+					instructions[i+1] = std::make_pair(instructions[i+1].first,left
 						+ "=" + right);
-					instructions.at(i) = pair<FAE,string>(instructions.at(i).first,"deleted");
+					instructions[i] = std::make_pair(instructions[i].first,"deleted");
 				}
 				for (size_t i = 0; i < instructions.size(); i++)
 				{
-					if (instructions.at(i).second.find(")--abs") != string::npos)
+					if (instructions[i].second.find(")--abs") != string::npos)
 					{
-						instructions.at(i) = pair<FAE,string>(instructions.at(i).first,"Abstraction");
+						instructions[i] = std::make_pair(instructions[i].first,"Abstraction");
 					}
 				}
 			}
@@ -823,19 +823,19 @@ protected:
 		for (size_t i = 2; i < stack.size(); i++)
 		{
 			std::stringstream ss,ss1;
-			ss << stack.at(i);
+			ss << stack[i];
 			if (ss.str().find("(ref)") != string::npos)
 			{
 				int index = 0;
 				std::stringstream os(ss.str().substr(5,1));
 				os >> index;
-				ss1 << vars.at(i-2);
+				ss1 << vars[i-2];
 
 				for(size_t j = 0; j < ta.size(); j++)
 				{
-					if (ta.at(j).find("root " + os.str())!=string::npos)
+					if (ta[j].find("root " + os.str())!=string::npos)
 					{
-						ta.at(j)= "var: [" +  ss1.str() + "]: " + "\n  |\n  v\n " + ta.at(j);
+						ta[j]= "var: [" +  ss1.str() + "]: " + "\n  |\n  v\n " + ta[j];
 					}
 				}
 			}
@@ -866,16 +866,16 @@ protected:
 		{
 			string fae;
 			std::stringstream ss;
-			ss << absTrace.at(i);
+			ss << absTrace[i];
 			fae = ss.str();
 			ta.clear();
 			collectTA(ta,fae);
-			readStackFrame(absTrace.at(i), out);
+			readStackFrame(absTrace[i], out);
 			printTAwithvariables(out,vars,ta);
-			std::cerr << msg.at(i) << std::endl;
+			std::cerr << msg[i] << std::endl;
 			for (size_t j = 0; j < ta.size(); j++)
 			{
-				std::cerr << ta.at(j) << std::endl;
+				std::cerr << ta[j] << std::endl;
 			}
 		}
 	}
@@ -884,7 +884,7 @@ protected:
 	{
 		for (size_t i = 0; i < boxes.size(); i++)
 		{
-			std::cerr << boxes.at(i) << std::endl;
+			std::cerr << boxes[i] << std::endl;
 		}
 	}
 
@@ -901,70 +901,70 @@ protected:
 		{
 			string fae;
 			std::stringstream ss;
-			ss << statements.at(i).first;
+			ss << statements[i].first;
 			fae = ss.str();
 			ta.clear();
 			Engine::collectTA(ta,fae);
-			readStackFrame(statements.at(i).first, out);
+			readStackFrame(statements[i].first, out);
 			stacklist.push_back(out);
 			printTAwithvariables(out,vars,ta);
 
-			if (i>0 && statements.at(i-1).second.find("Abstraction") != string::npos)
+			if (i>0 && statements[i-1].second.find("Abstraction") != string::npos)
 			{
-				if(statements.at(i).second.find("deleted") == string::npos)
+				if(statements[i].second.find("deleted") == string::npos)
 				{
 					std::cerr << "--------------------------------------------------------------------------------" << std::endl;
-					std::cerr << statements.at(i).second << std::endl;
+					std::cerr << statements[i].second << std::endl;
 					std::cerr << "--------------------------------------------------------------------------------" << std::endl;
 				}
 				continue;
 			}
 
-			if (statements.at(i).second.find("Abstraction") != string::npos)
+			if (statements[i].second.find("Abstraction") != string::npos)
 			{
 				for (size_t j = 0; j < ta.size(); j++)
 				{
-					std::cerr << ta.at(j) << std::endl;
+					std::cerr << ta[j] << std::endl;
 				}
 
 				std::cerr << "--------------------------------------------------------------------------------" << std::endl;
 				std::cerr << "Abstraction" << std::endl;
 				std::cerr << "--------------------------------------------------------------------------------" << std::endl;
-				printBoxes(boxes.at(i+1));
-				printAbsTAs(absTrace.at(i+1),vars);
+				printBoxes(boxes[i+1]);
+				printAbsTAs(absTrace[i+1],vars);
 			}
 			else if (
 				(
-					statements.at(i).second.find("deleted") == string::npos
+					statements[i].second.find("deleted") == string::npos
 					&& i > 0
-					&& statements.at(i-1).second.find("deleted") == string::npos
+					&& statements[i-1].second.find("deleted") == string::npos
 				) ||
-				(statements.at(i).second.find("deleted") == string::npos && i == 0))
+				(statements[i].second.find("deleted") == string::npos && i == 0))
 			{
 				for (size_t j = 0; j < ta.size(); j++)
 				{
-					std::cerr << ta.at(j) << std::endl;
+					std::cerr << ta[j] << std::endl;
 				}
 
 				std::cerr << "--------------------------------------------------------------------------------" << std::endl;
-				std::cerr << statements.at(i).second << std::endl;
+				std::cerr << statements[i].second << std::endl;
 				std::cerr << "--------------------------------------------------------------------------------" << std::endl;
 				size++;
 			}
 			else
 			{
-				if (i>0 && statements.at(i-1).second.find("deleted") == string::npos)
+				if (i>0 && statements[i-1].second.find("deleted") == string::npos)
 				{
 					for (size_t j = 0; j < ta.size(); j++)
 					{
-						std::cerr << ta.at(j) << std::endl;
+						std::cerr << ta[j] << std::endl;
 					}
 				}
 
-				if(i>0 && statements.at(i).second.find("deleted") == string::npos)
+				if(i>0 && statements[i].second.find("deleted") == string::npos)
 				{
 					std::cerr << "--------------------------------------------------------------------------------" << std::endl;
-					std::cerr << statements.at(i).second << std::endl;
+					std::cerr << statements[i].second << std::endl;
 					std::cerr << "--------------------------------------------------------------------------------" << std::endl;
 				}
 			}
