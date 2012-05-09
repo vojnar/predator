@@ -56,8 +56,21 @@ void FI_cond::execute(ExecutionManager& execMan,
 
 	assert((*state.first)[this->src_].isBool());
 
-	execMan.enqueue(state, this->next_[((*state.first)[this->src_].d_bool)?(0):(1)]);
+	SymState* s = state.second;
+	if((*state.first)[this->src_].d_bool)
+	{
+		execMan.encheckqueue("[YES]");
+		execMan.encondQueue(s,"[YES]");
+		execMan.condStatus_ = "[YES]";
+	}
+	else
+	{
+		execMan.encheckqueue("[NO]");
+		execMan.encondQueue(s,"[NO]");
+		execMan.condStatus_ = "[NO]";
+	}
 
+	execMan.enqueue(state, this->next_[((*state.first)[this->src_].d_bool)?(0):(1)]);
 }
 
 void FI_cond::finalize(

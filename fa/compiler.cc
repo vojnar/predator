@@ -1853,12 +1853,19 @@ protected:
 	 *
 	 * This method compiles a basic block of a control-flow graph.
 	 *
-	 * @param[in]  block     The block of the control-flow graph in CodeStorage
-	 * @param[in]  abstract  @p true if there should be abstraction at the
-	 *                       beginning of the block, @p false otherwise
+	 * @param[in]  block         The block of the control-flow graph in
+	 *                           CodeStorage
+	 * @param[in]  abstract      @p true if there should be abstraction at the
+	 *                           beginning of the block, @p false otherwise
+	 * @param[out] instructions  The vector of instructions
 	 */
-	void compileBlock(const CodeStorage::Block* block, bool abstract)
+	void compileBlock(const CodeStorage::Block* block, bool abstract,
+		std::vector<pair<string, string>>& instructions)
 	{
+		std::stringstream blkout;
+		blkout << block->name();
+		string blk = blkout.str();
+
 		size_t head = assembly_->code_.size();
 
 		if (abstract || loopAnalyser_.isEntryPoint(*block->begin()))
@@ -1868,6 +1875,11 @@ protected:
 
 		for (auto insn : *block)
 		{	// for every instruction of the block
+			std::stringstream insout;
+			insout << *insn;
+			string str = insout.str();
+			instructions.push_back(std::pair<string,string>(blk,str));
+
 			compileInstruction(*insn);
 
 			if (head != assembly_->code_.size())
@@ -1888,6 +1900,7 @@ protected:
 	 */
 	void compileFunction(const CodeStorage::Fnc& fnc)
 	{
+		std::vector<pair<string, string>> instructions = {};
 		std::pair<SymCtx, CodeStorage::Block>& fncInfo = getFncInfo(&fnc);
 
 		// get context
@@ -1979,7 +1992,7 @@ protected:
 			size_t blockHead = assembly_->code_.size();
 
 			// compile the block, abstract when the block is the first
-			compileBlock(block, first);
+			compileBlock(block, first, instructions);
 
 			assert(blockHead < assembly_->code_.size());
 
@@ -2023,12 +2036,21 @@ public:
 	 * @param[out]  assembly  Assembly that serves as the output
 	 * @param[in]   stor      Code storage with the code
 	 * @param[in]   entry     The entry point of the program
+	 * @param[out]  vars      Vector of names of variables
 	 */
 	void compile(Compiler::Assembly& assembly, const CodeStorage::Storage& stor,
-		const CodeStorage::Fnc& entry)
+		const CodeStorage::Fnc& entry, std::vector<std::string>& vars)
 	{
 		// clear the code in the assembly
 		reset(assembly);
+
+		for(auto var : stor.vars)
+		{	// for all variables in the code storage
+			if(!var.name.empty())
+			{	// in case the variable has a name, store it in the vector
+				vars.push_back(var.name);
+			}
+		}
 
 		for (auto fnc : stor.fncs)
 		{
@@ -2110,7 +2132,8 @@ Compiler::~Compiler()
 
 
 void Compiler::compile(Compiler::Assembly& assembly,
-	const CodeStorage::Storage& stor, const CodeStorage::Fnc& entry)
+	const CodeStorage::Storage& stor, const CodeStorage::Fnc& entry,
+	std::vector<std::string>& vars)
 {
-	core_->compile(assembly, stor, entry);
+	core_->compile(assembly, stor, entry, vars);
 }

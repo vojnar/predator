@@ -37,8 +37,10 @@
 #include "symctx.hh"
 #include "executionmanager.hh"
 #include "fixpointinstruction.hh"
+#include "regdef.hh"
 #include "restart_request.hh"
 #include "symexec.hh"
+#include "virtualmachine.hh"
 
 using namespace ssd;
 using std::vector;
@@ -76,6 +78,8 @@ class SymExec::Engine {
 	ExecutionManager execMan;
 
 	bool dbgFlag;
+
+	std::vector<std::string> vars;
 
 protected:
 
@@ -342,6 +346,87 @@ protected:
 	}
 #endif
 
+	static void getStatus(SymState* state, ExecutionManager& execMan, string& status)
+	{
+		status = "unknown";
+		std::ostringstream ss;
+		ss << state->instr->insn();
+
+		for (size_t i = 0; i < execMan.condQueue_.size(); ++i)
+		{
+			if(execMan.condQueue_.at(i).first == state)
+			{
+				status =  execMan.condQueue_.at(i).second;
+			}
+		}
+	}
+
+	static void getAbsTA(SymState* state, ExecutionManager& execMan,
+		std::vector<FAE>& absFaes, int& status)
+	{
+		status = 0;
+		absFaes.clear();
+
+		for (size_t i = 0; i < execMan.absQueue_.size(); i++)
+		{
+			if (execMan.absQueue_.at(i).first == state)
+			{
+				status = 1;
+				absFaes = execMan.absQueue_.at(i).second;
+			}
+		}
+	}
+
+	static void getAbsTrace(AbstractInstruction::StateType state,
+		std::vector<std::vector<FAE>>& absTrace)
+	{
+		SymState* s = state.second;
+		string ss1 = "";
+		std::ostringstream ss;
+		absTrace.clear();
+		std::vector<SymState*> trace;
+
+		for ( ; s; s = s->parent)
+		{
+			trace.push_back(s);
+		}
+
+		std::reverse(trace.begin(), trace.end());
+
+		for (size_t i = 0; i < trace.size()-1; i++)
+		{
+			if (trace.at(i)->instr->insn())
+			{
+				std::cerr << "     " << *trace.at(i)->instr->insn() << "-------"
+					<< *trace.at(i)->instr << std::endl;
+			}
+		}
+	}
+
+	static void getCondTrace(AbstractInstruction::StateType state,
+		std::vector<string>& condTrace, ExecutionManager& execMan)
+	{
+		SymState* s = state.second;
+		for ( ; s; s = s->parent)
+		{
+			string status;
+			getStatus(s,execMan,status);
+			if (s->instr->insn())
+			{
+				std::ostringstream ss;
+				ss << *s->instr->insn();
+
+				if (status.find("unknown") == string::npos
+					&& ss.str().find("if") != string::npos)
+				{
+					condTrace.push_back(status);
+				}
+			}
+		}
+
+		std::reverse(condTrace.begin(), condTrace.end());
+	}
+
 	/**
 	 * @brief  Prints a trace of preceding symbolic states
 	 *
@@ -350,11 +435,15 @@ protected:
 	 *
 	 * @param[in]  state  The state for which the backtrace is desired
 	 */
-	static void printTrace(const AbstractInstruction::StateType& state)
+	static void printTrace(const AbstractInstruction::StateType& state,
+		std::vector<pair<FAE,string>>& statements)
 	{
 		SymState* s = state.second;
 
 		std::vector<SymState*> trace;
+
+		statements = {};
+		int size = 0;
 
 		for ( ; s; s = s->parent)
 		{	// until we reach the initial state of the execution tree
@@ -368,15 +457,299 @@ protected:
 
 		for (auto s : trace)
 		{	// print out the trace
-			if (s->instr->insn()) {
-				CL_NOTE_MSG(&s->instr->insn()->loc,
-					SSD_INLINE_COLOR(C_LIGHT_RED, *s->instr->insn()));
-				CL_DEBUG_AT(2, std::endl << *s->fae);
+			if (s->instr->insn())
+			{
+//				CL_NOTE_MSG(&s->instr->insn()->loc,
+//					SSD_INLINE_COLOR(C_LIGHT_RED, *s->instr->insn()));
+//				CL_DEBUG_AT(2, std::endl << *s->fae);
+				std::stringstream ss, ss2, ss1;
+				ss2 << *s->instr;
+				if (ss2.str().find("abs") != string::npos)
+				{
+					ss << *s->instr->insn() << "--abs";
+				}
+				else
+				{
+					ss << *s->instr->insn();
+				}
+
+				ss1 << *s->fae;
+				statements.push_back(pair<FAE,string>(*s->fae,ss.str()));
+				size++;
 			}
 
 			CL_DEBUG_AT(2, *s->instr);
 		}
 	}
+
+	static size_t sizeTrace(const AbstractInstruction::StateType state)
+	{
+		SymState* s = state.second;
+		size_t size = 0;
+		for ( ; s; s = s->parent)
+		{
+			if (s->instr->insn())
+			{
+				size++;
+			}
+		}
+
+		return size;
+	}
+
+
+	static void printTrace2(std::vector<pair<FAE,string>> statements)
+	{
+		CL_NOTE("trace:");
+		int size = 0;
+		for (size_t i = 0; i < statements.size(); i++)
+		{
+			if (statements.at(i).second.find("deleted") == string::npos)
+			{
+				std::cerr << statements.at(i).second << std::endl;
+			}
+
+			size++;
+		}
+	}
+
+	static void refineStatements(std::vector<pair<FAE,string>>& instructions,
+		std::vector<string> condTrace)
+	{
+		for (size_t i = 0; i < instructions.size(); i++)
+		{
+			if (i+2 < instructions.size())
+			{
+				if (instructions.at(i).second.find("nondet") != string::npos
+					&& instructions.at(i+2).second.find("if")!=string::npos)
+				{
+					if(instructions.at(i).second.find("--abs") == string::npos)
+					{
+						instructions.at(i) = std::make_pair(instructions.at(i).first, "deleted");
+					}
+
+					instructions.at(i+1) = std::make_pair(instructions.at(i+1).first, "deleted");
+					instructions.at(i+2) = std::make_pair(instructions.at(i+2).first, "Check (ND) "
+						+ condTrace.at(i+3));
+
+					continue;
+				}
+			}
+
+			if (instructions.at(i).second.find("if") != string::npos)
+			{
+				int x = int(instructions.at(i).second.find("("));
+				int y = int(instructions.at(i).second.find(")"));
+				string z = instructions.at(i).second.substr(x+1, y-x - 1);
+				string s = instructions.at(i).second.substr(y);
+				string expression;
+
+				if (instructions.at(i-1).second.find(z) != string::npos)
+				{
+					x = int(instructions.at(i-1).second.find("("));
+					string exp;
+					if (instructions.at(i-1).second.find("==") != string::npos)
+					{
+						y = int(instructions.at(i-1).second.find("=="));
+						exp = "==";
+					}
+					if (instructions.at(i-1).second.find("<=") != string::npos)
+					{
+						y = int(instructions.at(i-1).second.find("<="));
+						exp = "<=";
+					}
+					if(instructions.at(i-1).second.find("< ") != string::npos)
+					{
+						y = int(instructions.at(i-1).second.find("< "));
+						exp = "< ";
+					}
+					if(instructions.at(i-1).second.find("!=") != string::npos)
+					{
+						y = int(instructions.at(i-1).second.find("!="));
+						exp = "!=";
+					}
+					int t = int(instructions.at(i-1).second.find(")"));
+					string left;
+					string right;
+					// for case of full expression
+					if (instructions.at(i-1).second.substr(x,y-x).find(":") == string::npos
+						&& instructions.at(i-1).second.substr(y,t-y).find(":")==string::npos
+						&& instructions.at(i-1).second.substr(y,t-y).find("NULL")==string::npos)
+					{
+						if (instructions.at(i-3).second.find(instructions.at(i-1).second.substr(x+1,y-x-1)) != string::npos)
+						{
+							int x1 = int(instructions.at(i-3).second.find("="));
+							left = instructions.at(i-3).second.substr(x1);
+							if (left.find("#") != string::npos)
+							{
+								left = left.substr(int(left.find(":"))+1);
+							}
+							instructions.at(i-3) = std::make_pair(instructions.at(i-3).first, "deleted");
+						}
+						if (instructions.at(i-2).second.find(instructions.at(i-1).second.substr(y+3, t-y-3)) != string::npos)
+						{
+							int x2 = int(instructions.at(i-2).second.find("="));
+							right = instructions.at(i-2).second.substr(x2);
+							if (right.find("#") != string::npos)
+							{
+								right = right.substr(int(right.find(":"))+1);
+							}
+							instructions.at(i-2) = pair<FAE,string>(instructions.at(i-2).first, "deleted");
+						}
+						expression = left + exp + right;
+						instructions.at(i) = std::make_pair(instructions.at(i).first,"Check (" + expression + ")" + condTrace.at(i+1));
+						if (instructions.at(i-1).second.find("--abs") == string::npos)
+						{
+							instructions.at(i-1) = std::make_pair(instructions.at(i-1).first, "deleted");
+						}
+					}
+					else
+					{
+						if (instructions.at(i-1).second.substr(x,y-x).find(":")==string::npos)
+						{
+							int x1 = int(instructions.at(i-2).second.find("="));
+							left = instructions.at(i-2).second.substr(x1);
+							if (left.find("#") != string::npos)
+							{
+								left = left.substr(int(left.find(":"))+1);
+							}
+
+							if (instructions.at(i-1).second.substr(y,t-y).find("NULL") == string::npos)
+							{
+								int x2 = int(instructions.at(i-1).second.find(":"));
+								right = instructions.at(i-1).second.substr(x2+1,1);
+							}
+							else
+							{
+								right = "NULL";
+							}
+
+							expression = left + exp + right;
+							instructions.at(i) = std::make_pair(instructions.at(i).first,
+								"Check (" + expression + ")" + condTrace.at(i+1));
+
+							instructions.at(i-2) = pair<FAE,string>(instructions.at(i-2).first, "deleted");
+							if (instructions.at(i-1).second.find("--abs") == string::npos)
+							{
+								instructions.at(i-1) = std::make_pair(instructions.at(i-1).first, "deleted");
+							}
+						}
+						else
+						{
+							if (instructions.at(i-1).second.substr(y,t-y).find(":")!=string::npos)
+							{
+								int x1 = int(instructions.at(i-1).second.substr(x,y-x).find(":"));
+								left = instructions.at(i-1).second.substr(x,y-x).substr(x1+1,1);
+								int x2 = int(instructions.at(i-1).second.substr(y,t-y).find(":"));
+								right = instructions.at(i-1).second.substr(y,t-y).substr(x2+1,1);
+								expression = left + exp + right;
+								instructions.at(i) = std::make_pair(instructions.at(i).first,"Check (" + expression + ")"
+										+ condTrace.at(i+1));
+								if (instructions.at(i-1).second.find("--abs") == string::npos)
+								{
+									instructions.at(i-1) = std::make_pair(instructions.at(i-1).first, "deleted");
+								}
+							}
+							else
+							{
+								int x1 = int(instructions.at(i-1).second.substr(x,y-x).find(":"));
+								left = instructions.at(i-1).second.substr(x,y-x).substr(x1+1,1);
+								right = "NULL";
+								expression = left + exp + right;
+								instructions.at(i) = std::make_pair(instructions.at(i).first,"Check (" + expression + ")"
+										+ condTrace.at(i+1));
+								if (instructions.at(i-1).second.find("--abs") == string::npos)
+								{
+									instructions.at(i-1) = std::make_pair(instructions.at(i-1).first, "deleted");
+								}
+							}
+						}
+					}
+				}
+			}
+
+			if (instructions.at(i).second.find("malloc") != string::npos)
+			{	// malloc
+				instructions.at(i) = std::make_pair(instructions.at(i).first,"Node* "
+					+ instructions.at(i).second.substr(int(instructions.at(i).second.find(":"))+1,1)
+					+ " = New Node()");
+			}
+			else
+			{	// assignment
+				if (instructions.at(i).second.find("=")!=string::npos)
+				{
+					if (instructions.at(i).second.find(":")!=string::npos
+						&& int(instructions.at(i).second.find("=")) > int(instructions.at(i).second.find(":")))
+					{
+						int x = int(instructions.at(i).second.find(":"));
+						string first = instructions.at(i).second.substr(x+1);
+						string left, right;
+						if (first.find(":")!=string::npos)
+						{
+							int y = int(first.find(":"));
+							int z = int(first.find("#"));
+							left = first.substr(0,z);
+							right = first.substr(y+1);
+							instructions.at(i) = pair<FAE,string>(instructions.at(i).first,left + right);
+						}
+						else
+						{
+							instructions.at(i) = pair<FAE,string>(instructions.at(i).first,first);
+						}
+					}
+				}
+			}
+
+			if (instructions.at(i).second.find("free") != string::npos)
+			{	// free
+				int x = int(instructions.at(i).second.find(":"));
+				instructions.at(i) = pair<FAE,string>(instructions.at(i).first,"Free("
+					+ instructions.at(i).second.substr(x+1,1) + ")");
+			}
+			if (instructions.at(i).second.find("(int)0") != string::npos
+				&& instructions.at(i+1).second.find("return") != string::npos)
+			{	// return
+				instructions.at(i) = pair<FAE,string>(instructions.at(i).first,"deleted");
+				instructions.at(i+1) = pair<FAE,string>(instructions.at(i+1).first,"Return 0");
+			}
+			if (instructions.at(i).second.find("(int)1") != string::npos
+				&& instructions.at(i+1).second.find("return") != string::npos)
+			{
+				instructions.at(i) = pair<FAE,string>(instructions.at(i).first,"deleted");
+				instructions.at(i+1) = pair<FAE,string>(instructions.at(i+1).first,"Return 1");
+			}
+		}
+
+		for (size_t i = 0; i < instructions.size()-1; i++)
+		{
+			if (instructions.at(i).second.find("#") != string::npos)
+			{
+				int x,y;
+				x = int(instructions.at(i).second.find("#"));
+				y = int(instructions.at(i).second.find("="));
+				string right = instructions.at(i).second.substr(x,y-x-1);
+				if (instructions.at(i+1).second.find(right) != string::npos)
+				{
+					y = int(instructions.at(i).second.find(":"));
+					right = instructions.at(i).second.substr(y+1);
+					x = int(instructions.at(i+1).second.find(":"));
+					y = int(instructions.at(i+1).second.find("="));
+					string left = instructions.at(i+1).second.substr(0,y-1);
+					instructions.at(i+1) = pair<FAE,string>(instructions.at(i+1).first,left
+						+ "=" + right);
+					instructions.at(i) = pair<FAE,string>(instructions.at(i).first,"deleted");
+				}
+				for (size_t i = 0; i < instructions.size(); i++)
+				{
+					if (instructions.at(i).second.find(")--abs") != string::npos)
+					{
+						instructions.at(i) = pair<FAE,string>(instructions.at(i).first,"Abstraction");
+					}
+				}
+			}
+		}
+	}
+
 
 	/**
 	 * @brief  Prints boxes
@@ -407,6 +780,198 @@ protected:
 		}
 	}
 
+
+	static void readStackFrame(const FAE& fae, std::vector<Data>& out)
+	{
+		out = {};
+		VirtualMachine vm(fae);
+		size_t root = vm.varGet(ABP_INDEX).d_ref.root;
+		auto& t = fae.roots[root]->getAcceptingTransition();
+		int n = 0;
+		for (auto i = t.lhs().begin(); i != t.lhs().end(); ++i)
+		{
+			out.push_back(fae.getData(*i));
+		}
+
+		n++;
+	}
+
+	static void collectTA(std::vector<string>& ta, string& fae)
+	{
+		ta = {};
+
+		while (fae.find("===") != string::npos)
+		{
+			int x = int(fae.find("==="));
+			if (fae.substr(x+3).find("===") != string::npos)
+			{
+				int y = fae.substr(x+3).find("===");
+				ta.push_back(fae.substr(x+3).substr(0,y));
+				fae.assign(fae.substr(y));
+			}
+			else
+			{
+				ta.push_back(fae.substr(x+3));
+				break;
+			}
+		}
+	}
+
+	static void printTAwithvariables(std::vector<Data> stack,
+		std::vector<string> vars,std::vector<string>& ta)
+	{
+		for (size_t i = 2; i < stack.size(); i++)
+		{
+			std::stringstream ss,ss1;
+			ss << stack.at(i);
+			if (ss.str().find("(ref)") != string::npos)
+			{
+				int index = 0;
+				std::stringstream os(ss.str().substr(5,1));
+				os >> index;
+				ss1 << vars.at(i-2);
+
+				for(size_t j = 0; j < ta.size(); j++)
+				{
+					if (ta.at(j).find("root " + os.str())!=string::npos)
+					{
+						ta.at(j)= "var: [" +  ss1.str() + "]: " + "\n  |\n  v\n " + ta.at(j);
+					}
+				}
+			}
+		}
+	}
+
+
+	static void printAbsTAs(std::vector<FAE> absTrace, std::vector<string> vars)
+	{
+		std::vector<string> msg;
+		for (int i = absTrace.size()-1; i >= 0; i--)
+		{
+			int z = absTrace.size() - 1- i;
+			if((z % 2) == 0)
+			{
+				msg.push_back("After Abstraction");
+			}
+			else
+			{
+				msg.push_back("After Norminaze and Fold");
+			}
+		}
+
+		std::reverse(msg.begin(), msg.end());
+		std::vector<Data> out;
+		std::vector<string> ta = {};
+		for (size_t i = 0; i < absTrace.size(); i++)
+		{
+			string fae;
+			std::stringstream ss;
+			ss << absTrace.at(i);
+			fae = ss.str();
+			ta.clear();
+			collectTA(ta,fae);
+			readStackFrame(absTrace.at(i), out);
+			printTAwithvariables(out,vars,ta);
+			std::cerr << msg.at(i) << std::endl;
+			for (size_t j = 0; j < ta.size(); j++)
+			{
+				std::cerr << ta.at(j) << std::endl;
+			}
+		}
+	}
+
+	static void printBoxes(std::vector<string>& boxes)
+	{
+		for (size_t i = 0; i < boxes.size(); i++)
+		{
+			std::cerr << boxes.at(i) << std::endl;
+		}
+	}
+
+	static void printTATrace(std::vector<pair<FAE,string>>& statements,
+		std::vector<string> vars, std::vector<std::vector<FAE>> absTrace,
+		std::vector<std::vector<string>>& boxes)
+	{
+		int size = 0;
+		std::vector<std::vector<Data>> stacklist = {};
+		std::vector<Data> out;
+		std::vector<string> ta = {};
+
+		for (size_t i = 0; i < statements.size(); i++)
+		{
+			string fae;
+			std::stringstream ss;
+			ss << statements.at(i).first;
+			fae = ss.str();
+			ta.clear();
+			Engine::collectTA(ta,fae);
+			readStackFrame(statements.at(i).first, out);
+			stacklist.push_back(out);
+			printTAwithvariables(out,vars,ta);
+
+			if (i>0 && statements.at(i-1).second.find("Abstraction") != string::npos)
+			{
+				if(statements.at(i).second.find("deleted") == string::npos)
+				{
+					std::cerr << "--------------------------------------------------------------------------------" << std::endl;
+					std::cerr << statements.at(i).second << std::endl;
+					std::cerr << "--------------------------------------------------------------------------------" << std::endl;
+				}
+				continue;
+			}
+
+			if (statements.at(i).second.find("Abstraction") != string::npos)
+			{
+				for (size_t j = 0; j < ta.size(); j++)
+				{
+					std::cerr << ta.at(j) << std::endl;
+				}
+
+				std::cerr << "--------------------------------------------------------------------------------" << std::endl;
+				std::cerr << "Abstraction" << std::endl;
+				std::cerr << "--------------------------------------------------------------------------------" << std::endl;
+				printBoxes(boxes.at(i+1));
+				printAbsTAs(absTrace.at(i+1),vars);
+			}
+			else if (
+				(
+					statements.at(i).second.find("deleted") == string::npos
+					&& i > 0
+					&& statements.at(i-1).second.find("deleted") == string::npos
+				) ||
+				(statements.at(i).second.find("deleted") == string::npos && i == 0))
+			{
+				for (size_t j = 0; j < ta.size(); j++)
+				{
+					std::cerr << ta.at(j) << std::endl;
+				}
+
+				std::cerr << "--------------------------------------------------------------------------------" << std::endl;
+				std::cerr << statements.at(i).second << std::endl;
+				std::cerr << "--------------------------------------------------------------------------------" << std::endl;
+				size++;
+			}
+			else
+			{
+				if (i>0 && statements.at(i-1).second.find("deleted") == string::npos)
+				{
+					for (size_t j = 0; j < ta.size(); j++)
+					{
+						std::cerr << ta.at(j) << std::endl;
+					}
+				}
+
+				if(i>0 && statements.at(i).second.find("deleted") == string::npos)
+				{
+					std::cerr << "--------------------------------------------------------------------------------" << std::endl;
+					std::cerr << statements.at(i).second << std::endl;
+					std::cerr << "--------------------------------------------------------------------------------" << std::endl;
+				}
+			}
+		}
+	}
+
+
 	/**
 	 * @brief  The main execution loop
 	 *
@@ -432,30 +997,85 @@ protected:
 
 		AbstractInstruction::StateType state;
 
+		std::vector<std::vector<pair<FAE,string>>> statelist = {};
+		std::vector<std::vector<string>> condTraceList = {};
+		std::vector<string> condTrace;
+		std::vector<std::vector<std::vector<FAE>>> absTraceList;
+		std::vector<std::vector<string>> boxTrace = {};
+		std::vector<std::vector<std::vector<string>>> boxTraceList = {};
+		std::vector<pair<std::vector<string>, string>> instructions = {};
+		std::vector<pair<FAE,string>> statements;
+		std::vector<Data> out;
+		std::vector<string> ta = {};
+		std::vector<std::vector<Data>> stacklist = {};
+		std::vector<std::vector<FAE>> absTrace = {};
+
 		try
 		{	// expecting problems...
+			std::string fae;
+			AbstractInstruction::StateType laststate, oldstate;
+
 			while (this->execMan.dequeueDFS(state))
 			{	// process all states in the DFS order
 				if (state.second->instr->insn())
 				{	// in case current instruction IS an instruction
-					CL_CDEBUG(2, SSD_INLINE_COLOR(C_LIGHT_RED,
-						state.second->instr->insn()->loc << *(state.second->instr->insn())));
-					CL_CDEBUG(2, state);
-				}
-				else
-				{
-					CL_CDEBUG(3, state);
+					string insn;
+					std::ostringstream ss;
+					ss << *state.second->instr->insn();
+					insn = ss.str();
+					ss << *state.second->fae;
+					fae = ss.str();
+					collectTA(ta,fae);
+
+					VirtualMachine vm(*state.second->fae);
+					if (sizeTrace(state) <= statements.size())
+					{
+						// add cond, abs, box trace into their lists
+						absTrace.push_back(execMan.absFAEs_);
+						execMan.absFAEs_.clear();
+						absTraceList.push_back(absTrace);
+						boxTrace.push_back(execMan.avaiBoxes_);
+						execMan.avaiBoxes_.clear();
+						boxTraceList.push_back(boxTrace);
+						condTraceList.push_back(condTrace);
+						statelist.push_back(statements);
+						// Change condition trace, abs trace, box trace
+						absTrace.erase(absTrace.begin() + sizeTrace(state) , absTrace.end());
+						condTrace.erase(condTrace.begin() + sizeTrace(state) - 1, condTrace.end());
+						boxTrace.erase(boxTrace.begin() + sizeTrace(state), boxTrace.end());
+						Engine::printTrace(state, statements);
+						condTrace.push_back(execMan.condStatus_);
+						execMan.condStatus_ = "...";
+					}
+					else
+					{
+						Engine::printTrace(state, statements);
+						// update cond, abs, box traces
+						absTrace.push_back(execMan.absFAEs_);
+						condTrace.push_back(execMan.condStatus_);
+						boxTrace.push_back(execMan.avaiBoxes_);
+						execMan.avaiBoxes_.clear();
+						execMan.absFAEs_.clear();
+						execMan.condStatus_ = "...";
+					}
 				}
 
 				// run the state
 				this->execMan.execute(state);
 			}
 
+			for (size_t i = 0; i < statelist.size(); i++)
+			{
+				refineStatements(statelist.at(i), condTraceList.at(i));
+				Engine::printTrace2(statelist.at(i));
+				Engine::printTATrace(statelist.at(i),vars,absTraceList.at(i),boxTraceList.at(i));
+			}
+
 			return true;
 		}
 		catch (ProgramError& e)
 		{
-//			Engine::printTrace(state);
+			//  Engine::printTrace(state);
 			if (state.second->instr->insn()) {
 				CL_NOTE_MSG(&state.second->instr->insn()->loc,
 					SSD_INLINE_COLOR(C_LIGHT_RED, *state.second->instr->insn()));
@@ -581,8 +1201,8 @@ public:
 	void compile(const CodeStorage::Storage& stor, const CodeStorage::Fnc& entry)
 	{
 		CL_DEBUG_AT(2, "compiling ...");
-		this->compiler_.compile(this->assembly_, stor, entry);
-		CL_DEBUG_AT(2, "assembly:" << std::endl << this->assembly_);
+		this->compiler_.compile(this->assembly_, stor, entry, vars);
+		CL_DEBUG_AT(2, "assembly instructions:" << std::endl << this->assembly_);
 	}
 
 	void run()

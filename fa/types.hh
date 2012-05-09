@@ -119,12 +119,10 @@ struct SelData {
 	 *
 	 * @returns  The modified output stream
 	 */
-	friend std::ostream& operator<<(std::ostream& os, const SelData& x) {
-		os << "sel" << x.offset << ':' << x.size << '[';
-		if (x.displ >= 0) {
-			os << '+';
-		}
-		return os << x.displ << ']';
+	friend std::ostream& operator<<(std::ostream& os, const SelData& x)
+	{
+		os << "sel" << x.offset;
+		return os;
 	}
 };
 

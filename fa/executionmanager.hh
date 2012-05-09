@@ -75,6 +75,23 @@ public:
 */
 public:
 
+	std::vector<std::string> checkqueue_;
+	std::string condStatus_;
+	std::vector<FAE> absFAEs_;
+	std::vector<std::string> avaiBoxes_;
+	std::vector<std::pair<SymState*,std::string>> condQueue_;
+	std::vector<std::pair<SymState*,std::vector<FAE>>> absQueue_;
+
+	void encheckqueue(const std::string& status)
+	{
+		checkqueue_.push_back(status);
+	}
+
+	void encondQueue(SymState* state, const std::string& status)
+	{
+		condQueue_.push_back(std::make_pair(state,status));
+	}
+
 	ExecutionManager() : root_(NULL) {}
 
 	~ExecutionManager() { this->clear(); }

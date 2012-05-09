@@ -646,13 +646,7 @@ public:
 
 		};
 
-		os << "===" << std::endl << "output (";
-
-		for(auto& s : box.outputCoverage())
-			os << " +" << s;
-
-		os << " ) [" << box.outputSignature << "] ";
-
+		os << "===" << std::endl << "output ";
 		TAWriter<label_type> writer(os);
 
 		for (auto state : box.output->getFinalStates())
@@ -664,12 +658,7 @@ public:
 		if (!box.input)
 			return os;
 
-		os << "===" << std::endl << "input " << box.inputIndex << " (";
-
-		for(auto& s : box.inputCoverage(box.inputIndex))
-			os << " +" << s;
-
-		os << " ) [" << box.inputSignature << "] ";
+		os << "===" << std::endl << "input ";
 
 		for (auto state : box.input->getFinalStates())
 			writer.writeState(state);

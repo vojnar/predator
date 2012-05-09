@@ -22,7 +22,7 @@
 #include "jump.hh"
 
 
-void FI_jmp::execute(ExecutionManager& execMan,
+void FI_jmp::execute(ExecutionManager& /* execMan */,
 	const AbstractInstruction::StateType&)
 {
 	// not implemented
