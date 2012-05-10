@@ -786,8 +786,7 @@ protected:
 		std::vector<Data> out;
 		VirtualMachine vm(fae);
 		size_t root = vm.varGet(ABP_INDEX).d_ref.root;
-		assert(root < fae.roots.size());
-		if (fae.roots[root])
+		if (root < fae.roots.size() && fae.roots[root])
 		{
 			auto& t = fae.roots[root]->getAcceptingTransition();
 			for (auto i = t.lhs().begin(); i != t.lhs().end(); ++i)
@@ -795,6 +794,8 @@ protected:
 				out.push_back(fae.getData(*i));
 			}
 		}
+
+		return out;
 	}
 
 	static void collectTA(std::vector<string>& ta, string& fae)
