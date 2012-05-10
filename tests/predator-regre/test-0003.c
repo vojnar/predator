@@ -9,15 +9,15 @@ int main() {
     switch (___sl_get_nondet_int()) {
         case 0:
             free(undef);
-            return;
+            return 0;
 
         case 1:
             free(val);
-            return;
+            return 0;
 
         case 2:
             free(ptr);
-            return;
+            return 0;
 
         default:
             break;
@@ -29,3 +29,17 @@ int main() {
 
     return 0;
 }
+
+/**
+ * @file test-0003.c
+ *
+ * @brief invalid free()
+ *
+ * - uninitialized value
+ * - non-heap object
+ * - double free
+ *
+ * @attention
+ * This description is automatically imported from tests/predator-regre/README.
+ * Any changes made to this comment will be thrown away on the next import.
+ */

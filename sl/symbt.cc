@@ -146,17 +146,11 @@ SymBackTrace::~SymBackTrace() {
     delete d;
 }
 
-SymBackTrace& SymBackTrace::operator=(const SymBackTrace &ref) {
-    delete d;
-    d = new Private(*ref.d);
-    return *this;
-}
-
 const CodeStorage::Storage& SymBackTrace::stor() const {
     return d->stor;
 }
 
-void SymBackTrace::printBackTrace(bool forcePtrace) const {
+bool SymBackTrace::printBackTrace(bool forcePtrace) const {
     using namespace CodeStorage;
 
     Private::TStackPP ppStack(d->ppStack);
@@ -164,7 +158,7 @@ void SymBackTrace::printBackTrace(bool forcePtrace) const {
 
     const Private::TStack &ref = d->btStack;
     if (!ptrace && ref.size() < 2)
-        return;
+        return false;
 
     BOOST_FOREACH(const Private::BtStackItem &item, ref) {
         if (ptrace) {
@@ -180,6 +174,8 @@ void SymBackTrace::printBackTrace(bool forcePtrace) const {
 
         CL_NOTE_MSG(item.loc, "from call of " << nameOf(item.fnc) << "()");
     }
+
+    return true;
 }
 
 void SymBackTrace::pushCall(

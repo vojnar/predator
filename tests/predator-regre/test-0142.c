@@ -21,7 +21,7 @@ static void gl_insert(void)
 
 static int foo(int value)
 {
-    (void) value;
+    return value;
 }
 
 int main()
@@ -39,3 +39,13 @@ int main()
 
     return 0;
 }
+
+/**
+ * @file test-0142.c
+ *
+ * @brief simplification of test-0133.c (only some offset manipulation)
+ *
+ * @attention
+ * This description is automatically imported from tests/predator-regre/README.
+ * Any changes made to this comment will be thrown away on the next import.
+ */

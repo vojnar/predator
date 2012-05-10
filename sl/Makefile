@@ -18,7 +18,7 @@
 CMAKE ?= cmake
 CTEST ?= ctest
 
-.PHONY: all check clean distclean distcheck fast version.h
+.PHONY: all check clean cppcheck distclean distcheck fast version.h
 
 all: version.h ../cl_build
 	# make sure the libcl.so is up2date
@@ -26,12 +26,9 @@ all: version.h ../cl_build
 	mkdir -p ../sl_build
 	cd ../sl_build && $(CMAKE) ../sl
 	$(MAKE) -C ../sl_build
-	@test -d ../.git || sed \
-		"s|SL_PLUG=.*$$|SL_PLUG='`readlink -f ../sl_build/libsl.so`'|" -i \
-		probe.sh slgcc ../chk-error-label-reachability.sh ../register-paths.sh
 
 ../cl_build:
-	test -d $@ || $(MAKE) -C ../cl
+	test -e $@ || $(MAKE) -C ../cl
 
 fast:
 	$(MAKE) -sC ../sl_build
@@ -39,8 +36,12 @@ fast:
 check: all
 	cd ../sl_build && $(CTEST) --output-on-failure
 
+cppcheck: all
+	cppcheck --enable=style,performance,portability,information,missingInclude \
+		--template gcc -j5 --inline-suppr .
+
 version.h:
-	@if test -d ../.git; then \
+	@if test -e ../.git; then \
 		printf "#define SL_GIT_SHA1 \"%s\"\n" \
 			`git log -1 | head -1 | cut -f2 -d" "` \
 			> $@.tmp \
@@ -49,7 +50,7 @@ version.h:
 		fi
 
 clean:
-	if test -d ../.git; then rm -f version.h; fi
+	if test -e ../.git; then rm -f version.h; fi
 	if test -e ../sl_build/Makefile; then $(MAKE) clean -C ../sl_build; fi
 
 distclean: clean

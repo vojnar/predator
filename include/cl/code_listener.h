@@ -158,12 +158,7 @@ enum cl_scope_e {
     /**
      * scope is limited to currently processed function
      */
-    CL_SCOPE_FUNCTION,
-
-    /**
-     * scope is limited to currently processed basic block
-     */
-    CL_SCOPE_BB
+    CL_SCOPE_FUNCTION
 };
 
 /**
@@ -184,7 +179,7 @@ enum cl_type_e {
     CL_TYPE_REAL,
 
     /**
-     * used only be cl_cst
+     * used only by cl_cst
      */
     CL_TYPE_STRING
 };
@@ -300,7 +295,12 @@ enum cl_accessor_e {
     /**
      * record accessor, in the C language: .
      */
-    CL_ACCESSOR_ITEM
+    CL_ACCESSOR_ITEM,
+
+    /**
+     * offset accessor, in the C language: ((char *)ptr + N)
+     */
+    CL_ACCESSOR_OFFSET
 };
 
 /**
@@ -343,6 +343,14 @@ struct cl_accessor {
              */
             int                         id;
         } item; /**< valid only for @b CL_ACCESSOR_ITEM */
+
+        /* CL_ACCESSOR_OFFSET */
+        struct {
+            /**
+             * offset to move the address by
+             */
+            int                         off;
+        } offset;
     } data;
 };
 
@@ -433,7 +441,7 @@ struct cl_var {
 };
 
 /**
- * generic operand type enumeration
+ * generic operand kind enumeration
  */
 enum cl_operand_e {
     /**
@@ -547,7 +555,7 @@ enum cl_insn_e {
     CL_INSN_SWITCH,
 
     /**
-     * label 
+     * label
      */
     CL_INSN_LABEL
 };

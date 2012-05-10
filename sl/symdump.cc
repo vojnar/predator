@@ -26,44 +26,13 @@
 
 #include "symheap.hh"
 #include "symplot.hh"
+#include "symtrace.hh"
 
 #include <iostream>
 
 using std::cout;
 
-void dump_clt(const struct cl_type *clt) {
-    cltToStream(cout, clt, /* depth */ 3U);
-}
-
-void dump_clt(const struct cl_type *clt, unsigned depth) {
-    cltToStream(cout, clt, depth);
-}
-
-void dump_ac(const struct cl_accessor *ac) {
-    acToStream(cout, ac, /* oneline */ false);
-}
-
-void dump_ac(const struct cl_accessor &ac) {
-    dump_ac(&ac);
-}
-
-void dump_op(const struct cl_operand &op) {
-    cout << op << "\n";
-}
-
-void dump_op(const struct cl_operand *op) {
-    dump_op(*op);
-}
-
-// NOTE: symbol cl_insn clashes with a gdb internal debugging function
-void dump_cl_insn(const struct CodeStorage::Insn &insn) {
-    cout << insn << "\n";
-}
-
-// NOTE: symbol cl_insn clashes with a gdb internal debugging function
-void dump_cl_insn(const struct CodeStorage::Insn *insn) {
-    dump_cl_insn(*insn);
-}
+SymHeapCore *symdump_ref_heap;
 
 void dump_plot_core(const SymHeapCore *core, const char *name) {
     if (!core) {
@@ -76,6 +45,9 @@ void dump_plot_core(const SymHeapCore *core, const char *name) {
         cout << "dump_plot: error: failed to downcast SymHeapCore to SymHeap\n";
         return;
     }
+
+    // paralyze SymHeap self-checks while plotting from a debugger
+    ProtectionIntrusion intrudor;
 
     // attempt to plot heap
     if (!plotHeap(*sh, name))

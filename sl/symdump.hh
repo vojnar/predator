@@ -27,35 +27,26 @@
  * debugging
  */
 
-#include "symtrace.hh"
-
-struct cl_type;
 class SymHeap;
+class SymHeapCore;
 
-#ifndef BUILDING_DOX
-    namespace CodeStorage {
-        struct Insn;
-    }
-#endif
+namespace Trace {
+    class Node;
+}
 
-/// dump @b type-info given as clt
-void dump_clt(const struct cl_type *clt);
-void dump_clt(const struct cl_type *clt, unsigned depth);
+extern SymHeapCore *symdump_ref_heap;
 
-/// dump a chain of @b accessors
-void dump_ac(const struct cl_accessor &ac);
-/// dump a chain of @b accessors
-void dump_ac(const struct cl_accessor *ac);
+// TODO: maintain a stack?
+class SymDumpRefHeap {
+    public:
+        SymDumpRefHeap(SymHeapCore *sh) {
+            symdump_ref_heap = sh;
+        }
 
-/// dump a code listener @b operand
-void dump_op(const struct cl_operand &op);
-/// dump a code listener @b operand
-void dump_op(const struct cl_operand *op);
-
-/// dump a code listener @b instruction
-void dump_cl_insn(const struct CodeStorage::Insn &insn);
-/// dump a code listener @b instruction
-void dump_cl_insn(const struct CodeStorage::Insn *insn);
+        ~SymDumpRefHeap() {
+            symdump_ref_heap = 0;
+        }
+};
 
 /// plot the given heap to file "symdump-NNNN.dot"
 void dump_plot(const SymHeapCore *sh);

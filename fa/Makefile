@@ -18,8 +18,7 @@
 CMAKE ?= cmake
 CTEST ?= ctest
 
-.PHONY: all clean distclean \
-	distcheck version.h
+.PHONY: all check clean distclean distcheck version.h
 
 all:
 	$(MAKE) -C ../cl_build # make sure the libcl.so is up2date
@@ -31,7 +30,7 @@ check: all
 	cd ../fa_build && $(CTEST) --output-on-failure
 
 version.h:
-	@if test -d ../.git; then \
+	@if test -e ../.git; then \
 		printf "#define FA_GIT_SHA1 \"%s\"\n" \
 			`git log -1 | head -1 | cut -f2 -d" "` \
 			> $@.tmp \
@@ -48,4 +47,4 @@ distclean: clean
 	rm -rf ../fa_build
 
 distcheck: distclean
-	$(MAKE) check; true
+	$(MAKE) check

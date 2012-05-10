@@ -23,6 +23,7 @@
 #include <cl/clutil.hh>
 #include <cl/storage.hh>
 
+#include "builtins.hh"
 #include "util.hh"
 
 #include <cstring>
@@ -214,7 +215,7 @@ namespace CodeStorage {
         storeOperand(op, &tpl);
     }
 
-    Insn* createInsn(const struct cl_insn *cli, ControlFlow &cfg) {
+    Insn* createInsn(const struct cl_insn *cli, ControlFlow *cfg) {
         enum cl_insn_e code = cli->code;
 
         Insn *insn = new Insn;
@@ -230,7 +231,7 @@ namespace CodeStorage {
                 break;
 
             case CL_INSN_JMP:
-                targets.push_back(cfg[cli->data.insn_jmp.label]);
+                targets.push_back(cfg->operator[](cli->data.insn_jmp.label));
                 break;
 
             case CL_INSN_COND:
@@ -238,8 +239,8 @@ namespace CodeStorage {
                 storeOperand(operands[0], cli->data.insn_cond.src);
 
                 targets.resize(2);
-                targets[0] = cfg[cli->data.insn_cond.then_label];
-                targets[1] = cfg[cli->data.insn_cond.else_label];
+                targets[0] = cfg->operator[](cli->data.insn_cond.then_label);
+                targets[1] = cfg->operator[](cli->data.insn_cond.else_label);
                 break;
 
             case CL_INSN_RET:
@@ -301,6 +302,7 @@ namespace CodeStorage {
         BOOST_FOREACH(const Block *bb, fnc->cfg) {
             destroyBlock(const_cast<Block *>(bb));
         }
+        delete fnc->cgNode;
         delete fnc;
     }
 
@@ -319,21 +321,23 @@ struct ClStorageBuilder::Private {
     Fnc         *fnc;
     Block       *bb;
     Insn        *insn;
+    bool        preventRefOps;
 
     Private():
         file(0),
         fnc(0),
         bb(0),
-        insn(0)
+        insn(0),
+        preventRefOps(0)
     {
     }
 
     typedef struct cl_operand TOp;
 
     void digInitials(const TOp *);
-    Var& digOperandVar(const TOp *, bool isArgDecl);
+    bool digOperandVar(const TOp *, bool isArgDecl);
     void digOperandCst(const struct cl_operand *);
-    void digOperand(const TOp *, bool skipVarInit = false);
+    void digOperand(const TOp *);
     void openInsn(Insn *);
     void closeInsn();
 };
@@ -359,8 +363,7 @@ void ClStorageBuilder::Private::digInitials(const TOp *op)
 
     const struct cl_initializer *initial;
     for (initial = clv->initial; initial; initial = initial->next) {
-        ControlFlow *cfg = /* XXX */ 0;
-        Insn *insn = createInsn(&initial->insn, /* XXX */ *cfg);
+        Insn *insn = createInsn(&initial->insn, /* cfg */ 0);
 
         // initializer instructions are not associated with any basic block
         insn->bb = 0;
@@ -369,7 +372,7 @@ void ClStorageBuilder::Private::digInitials(const TOp *op)
         stor.vars[id].initials.push_back(insn);
 
         BOOST_FOREACH(const struct cl_operand &op, insn->operands)
-            this->digOperand(&op, /* skipVarInit */ true);
+            this->digOperand(&op);
     }
 }
 
@@ -384,14 +387,13 @@ EVar varCodeByScope(const enum cl_scope_e scope, const bool isArgDecl) {
                 ? VAR_FNC_ARG
                 : VAR_LC;
 
-        case CL_SCOPE_BB:
         default:
             CL_BREAK_IF("varCodeByScope() got an invalid scope code");
             return VAR_VOID;
     }
 }
 
-Var& ClStorageBuilder::Private::digOperandVar(const TOp *op, bool isArgDecl) {
+bool ClStorageBuilder::Private::digOperandVar(const TOp *op, bool isArgDecl) {
     const int id = varIdFromOperand(op);
 
     // mark as used in the current function
@@ -401,7 +403,7 @@ Var& ClStorageBuilder::Private::digOperandVar(const TOp *op, bool isArgDecl) {
     Var &var = stor.vars[id];
     if (VAR_VOID != var.code)
         // already processed
-        return var;
+        return false;
 
     const enum cl_scope_e scope = op->scope;
     const EVar code = varCodeByScope(scope, isArgDecl);
@@ -425,7 +427,7 @@ Var& ClStorageBuilder::Private::digOperandVar(const TOp *op, bool isArgDecl) {
             break;
     }
 
-    return var;
+    return true;
 }
 
 void ClStorageBuilder::Private::digOperandCst(const struct cl_operand *op) {
@@ -465,7 +467,7 @@ void ClStorageBuilder::Private::digOperandCst(const struct cl_operand *op) {
     nameMap[name] = uid;
 }
 
-void ClStorageBuilder::Private::digOperand(const TOp *op, bool skipVarInit) {
+void ClStorageBuilder::Private::digOperand(const TOp *op) {
     if (!op || CL_OPERAND_VOID == op->code)
         return;
 
@@ -498,12 +500,16 @@ void ClStorageBuilder::Private::digOperand(const TOp *op, bool skipVarInit) {
             return;
     }
 
-    Var &var = this->digOperandVar(op, /* isArgDecl */ false);
+    const bool skipVarInit = !this->digOperandVar(op, /* isArgDecl */ false);
 
     ac = op->accessor;
-    if (ac && ac->code != CL_ACCESSOR_DEREF && seekRefAccessor(ac))
+    if (!preventRefOps && ac && ac->code != CL_ACCESSOR_DEREF &&
+            seekRefAccessor(ac))
+    {
         // we are taking a reference to the variable by this operand!
-        var.mayBePointed = true;
+        const int id = varIdFromOperand(op);
+        stor.vars[id].mayBePointed = true;
+    }
 
     if (skipVarInit)
         return;
@@ -515,13 +521,9 @@ void ClStorageBuilder::Private::openInsn(Insn *newInsn) {
     // set pointer to the owning instance of Storage
     newInsn->stor = &this->stor;
 
-    if (insn)
-        // Aiee, insn already opened
-        CL_TRAP;
-
-    if (!bb)
-        // we have actually no basic block to append the insn to
-        CL_TRAP;
+    // check there is no insn already opened
+    CL_BREAK_IF(insn);
+    CL_BREAK_IF(!bb);
 
     bb->append(newInsn);
     insn = newInsn;
@@ -617,7 +619,7 @@ void ClStorageBuilder::insn(const struct cl_insn *cli) {
         return;
 
     // serialize given insn
-    Insn *insn = createInsn(cli, d->fnc->cfg);
+    Insn *insn = createInsn(cli, &d->fnc->cfg);
     d->openInsn(insn);
 
     // current insn is actually already complete
@@ -639,6 +641,10 @@ void ClStorageBuilder::insn_call_open(
     storeOperand(operands[0], dst);
     storeOperand(operands[1], fnc);
 
+    // prevent existing reference marks '&' on operands to be taken into account
+    // for operands of some internal handlers like VK_ASSERT() or PT_ASSERT().
+    d->preventRefOps = isBuiltInFnc(operands[/* fnc */ 1]);
+
     d->openInsn(insn);
 }
 
@@ -651,6 +657,9 @@ void ClStorageBuilder::insn_call_arg(int, const struct cl_operand *arg_src) {
 
 void ClStorageBuilder::insn_call_close() {
     d->closeInsn();
+
+    // switch back preventing for next instructions
+    d->preventRefOps = false;
 }
 
 void ClStorageBuilder::insn_switch_open(

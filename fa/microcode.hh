@@ -25,6 +25,7 @@
 
 #include "abstractinstruction.hh"
 #include "sequentialinstruction.hh"
+#include "box.hh"
 
 class FI_cond : public AbstractInstruction {
 
@@ -34,10 +35,16 @@ class FI_cond : public AbstractInstruction {
 
 public:
 
-	FI_cond(size_t src, AbstractInstruction* next[2])
-		: AbstractInstruction(fi_type_e::fiBranch), src_(src), next_({ next[0], next[1] }) {}
+	FI_cond(const CodeStorage::Insn* insn, size_t src, AbstractInstruction* next[2])
+		: AbstractInstruction(insn, fi_type_e::fiBranch),
+		src_(src), next_({ next[0], next[1] }) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	FI_cond(const CodeStorage::Insn* insn, size_t src, const std::vector<AbstractInstruction*>& next)
+		: AbstractInstruction(insn, fi_type_e::fiBranch),
+		src_(src), next_({ next[0], next[1] }) {}
+
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual void finalize(
 		const std::unordered_map<const CodeStorage::Block*, AbstractInstruction*>& codeIndex,
@@ -45,7 +52,8 @@ public:
 	);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
-		return os << "cjmp  \tr" << this->src_ << ", " << this->next_[0] << ", " << this->next_[1];
+		return os << "cjmp  \tr" << this->src_ << ", "
+			<< this->next_[0] << ", " << this->next_[1];
 	}
 
 };
@@ -57,10 +65,12 @@ class FI_acc_sel : public SequentialInstruction {
 
 public:
 
-	FI_acc_sel(size_t dst, size_t offset)
-		: SequentialInstruction(), dst_(dst), offset_(offset) {}
+	FI_acc_sel(const CodeStorage::Insn* insn, size_t dst, size_t offset)
+		: SequentialInstruction(insn, fi_type_e::fiUnspec),
+		dst_(dst), offset_(offset) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "acc   \t[r" << this->dst_ << " + " << this->offset_ << "]";
@@ -76,13 +86,16 @@ class FI_acc_set : public SequentialInstruction {
 
 public:
 
-	FI_acc_set(size_t dst, int base, const std::vector<size_t>& offsets)
-		: SequentialInstruction(), dst_(dst), base_(base), offsets_(offsets) {}
+	FI_acc_set(const CodeStorage::Insn* insn, size_t dst, int base,
+		const std::vector<size_t>& offsets)
+		: SequentialInstruction(insn), dst_(dst), base_(base), offsets_(offsets) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
-		return os << "acc   \t[r" << this->dst_ << " + " << this->base_ << " + " << utils::wrap(this->offsets_) << ']';
+		return os << "acc   \t[r" << this->dst_ << " + " << this->base_
+			<< " + " << utils::wrap(this->offsets_) << ']';
 	}
 
 };
@@ -93,10 +106,11 @@ class FI_acc_all : public SequentialInstruction {
 
 public:
 
-	FI_acc_all(size_t dst)
-		: SequentialInstruction(), dst_(dst) {}
+	FI_acc_all(const CodeStorage::Insn* insn, size_t dst)
+		: SequentialInstruction(insn), dst_(dst) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "acca  \t[r" << this->dst_ << ']';
@@ -111,10 +125,11 @@ class FI_load_cst : public SequentialInstruction {
 
 public:
 
-	FI_load_cst(size_t dst, const Data& data)
-		: SequentialInstruction(), dst_(dst), data_(data) {}
+	FI_load_cst(const CodeStorage::Insn* insn, size_t dst, const Data& data)
+		: SequentialInstruction(insn), dst_(dst), data_(data) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "mov   \tr" << this->dst_ << ", " << this->data_;
@@ -129,10 +144,11 @@ class FI_move_reg : public SequentialInstruction {
 
 public:
 
-	FI_move_reg(size_t dst, size_t src)
-		: SequentialInstruction(), dst_(dst), src_(src) {}
+	FI_move_reg(const CodeStorage::Insn* insn, size_t dst, size_t src)
+		: SequentialInstruction(insn), dst_(dst), src_(src) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "mov   \tr" << this->dst_ << ", r" << this->src_;
@@ -146,9 +162,11 @@ class FI_bnot : public SequentialInstruction {
 
 public:
 
-	FI_bnot(size_t dst) : SequentialInstruction(), dst_(dst) {}
+	FI_bnot(const CodeStorage::Insn* insn, size_t dst)
+		: SequentialInstruction(insn), dst_(dst) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "not   \tr" << this->dst_;
@@ -162,9 +180,11 @@ class FI_inot : public SequentialInstruction {
 
 public:
 
-	FI_inot(size_t dst) : SequentialInstruction(), dst_(dst) {}
+	FI_inot(const CodeStorage::Insn* insn, size_t dst) :
+		SequentialInstruction(insn), dst_(dst) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "not   \tr" << this->dst_;
@@ -180,13 +200,16 @@ class FI_move_reg_offs : public SequentialInstruction {
 
 public:
 
-	FI_move_reg_offs(size_t dst, size_t src, int offset)
-		: SequentialInstruction(), dst_(dst), src_(src), offset_(offset) {}
+	FI_move_reg_offs(const CodeStorage::Insn* insn,
+		size_t dst, size_t src, int offset)
+		: SequentialInstruction(insn), dst_(dst), src_(src), offset_(offset) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
-		return os << "mov   \tr" << this->dst_ << ", r" << this->src_ << " + " << this->offset_;
+		return os << "mov   \tr" << this->dst_ << ", r" << this->src_
+			<< " + " << this->offset_;
 	}
 
 };
@@ -199,13 +222,16 @@ class FI_move_reg_inc : public SequentialInstruction {
 
 public:
 
-	FI_move_reg_inc(size_t dst, size_t src1, size_t src2)
-		: SequentialInstruction(), dst_(dst), src1_(src1), src2_(src2) {}
+	FI_move_reg_inc(const CodeStorage::Insn* insn,
+		size_t dst, size_t src1, size_t src2)
+		: SequentialInstruction(insn), dst_(dst), src1_(src1), src2_(src2) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
-		return os << "mov   \tr" << this->dst_ << ", r" << this->src1_ << " + r" << this->src2_;
+		return os << "mov   \tr" << this->dst_ << ", r" << this->src1_
+			<< " + r" << this->src2_;
 	}
 
 };
@@ -217,10 +243,11 @@ class FI_get_greg : public SequentialInstruction {
 
 public:
 
-	FI_get_greg(size_t dst, size_t src)
-		: SequentialInstruction(), dst_(dst), src_(src) {}
+	FI_get_greg(const CodeStorage::Insn* insn, size_t dst, size_t src)
+		: SequentialInstruction(insn), dst_(dst), src_(src) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "mov   \tr" << this->dst_ << ", gr" << this->src_;
@@ -235,10 +262,11 @@ class FI_set_greg : public SequentialInstruction {
 
 public:
 
-	FI_set_greg(size_t dst, size_t src)
-		: SequentialInstruction(), dst_(dst), src_(src) {}
+	FI_set_greg(const CodeStorage::Insn* insn, size_t dst, size_t src)
+		: SequentialInstruction(insn), dst_(dst), src_(src) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "mov   \tgr" << this->dst_ << ", r" << this->src_;
@@ -253,10 +281,11 @@ class FI_get_ABP : public SequentialInstruction {
 
 public:
 
-	FI_get_ABP(size_t dst, int offset)
-		: SequentialInstruction(), dst_(dst), offset_(offset) {}
+	FI_get_ABP(const CodeStorage::Insn* insn, size_t dst, int offset)
+		: SequentialInstruction(insn), dst_(dst), offset_(offset) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "mov   \tr" << this->dst_ << ", ABP + " << this->offset_;
@@ -362,13 +391,15 @@ class FI_load : public SequentialInstruction {
 
 public:
 
-	FI_load(size_t dst, size_t src, int offset)
-		: SequentialInstruction(), dst_(dst), src_(src), offset_(offset) {}
+	FI_load(const CodeStorage::Insn* insn, size_t dst, size_t src, int offset)
+		: SequentialInstruction(insn), dst_(dst), src_(src), offset_(offset) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
-		return os << "mov   \tr" << this->dst_ << ", [r" << this->src_ << " + " << this->offset_ << ']';
+		return os << "mov   \tr" << this->dst_ << ", [r" << this->src_
+			<< " + " << this->offset_ << ']';
 	}
 
 };
@@ -380,10 +411,11 @@ class FI_load_ABP : public SequentialInstruction {
 
 public:
 
-	FI_load_ABP(size_t dst, int offset)
-		: SequentialInstruction(), dst_(dst), offset_(offset) {}
+	FI_load_ABP(const CodeStorage::Insn* insn, size_t dst, int offset)
+		: SequentialInstruction(insn), dst_(dst), offset_(offset) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "mov   \tr" << this->dst_ << ", [ABP + " << this->offset_ << ']';
@@ -399,13 +431,15 @@ class FI_store : public SequentialInstruction {
 
 public:
 
-	FI_store(size_t dst, size_t src, int offset)
-		: SequentialInstruction(), dst_(dst), src_(src), offset_(offset) {}
+	FI_store(const CodeStorage::Insn* insn, size_t dst, size_t src, int offset)
+		: SequentialInstruction(insn), dst_(dst), src_(src), offset_(offset) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
-		return os << "mov   \t[r" << this->dst_ << " + " << this->offset_ << "], r" << this->src_;
+		return os << "mov   \t[r" << this->dst_ << " + " << this->offset_
+			<< "], r" << this->src_;
 	}
 
 };
@@ -437,13 +471,17 @@ class FI_loads : public SequentialInstruction {
 
 public:
 
-	FI_loads(size_t dst, size_t src, int base, const std::vector<size_t>& offsets)
-		: SequentialInstruction(), dst_(dst), src_(src), base_(base), offsets_(offsets) {}
+	FI_loads(const CodeStorage::Insn* insn, size_t dst, size_t src, int base,
+		const std::vector<size_t>& offsets)
+		: SequentialInstruction(insn), dst_(dst), src_(src), base_(base),
+		offsets_(offsets) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
-		return os << "mov   \tr" << this->dst_ << ", [r" << this->src_ << " + " << this->base_ << " + " << utils::wrap(this->offsets_) << ']';
+		return os << "mov   \tr" << this->dst_ << ", [r" << this->src_ << " + "
+			<< this->base_ << " + " << utils::wrap(this->offsets_) << ']';
 	}
 
 };
@@ -457,13 +495,15 @@ class FI_stores : public SequentialInstruction {
 
 public:
 
-	FI_stores(size_t dst, size_t src, int base)
-		: SequentialInstruction(), dst_(dst), src_(src), base_(base) {}
+	FI_stores(const CodeStorage::Insn* insn, size_t dst, size_t src, int base)
+		: SequentialInstruction(insn), dst_(dst), src_(src), base_(base) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
-		return os << "mov   \t[r" << this->dst_ << " + " << this->base_ << "], r" << this->src_;
+		return os << "mov   \t[r" << this->dst_ << " + " << this->base_
+			<< "], r" << this->src_;
 	}
 
 };
@@ -475,10 +515,11 @@ class FI_alloc : public SequentialInstruction {
 
 public:
 
-	FI_alloc(size_t dst, size_t src)
-		: SequentialInstruction(), dst_(dst), src_(src) {}
+	FI_alloc(const CodeStorage::Insn* insn, size_t dst, size_t src)
+		: SequentialInstruction(insn), dst_(dst), src_(src) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "alloc \tr" << this->dst_ << ", r" << this->src_;
@@ -496,10 +537,13 @@ class FI_node_create : public SequentialInstruction {
 
 public:
 
-	FI_node_create(size_t dst, size_t src, size_t size, const TypeBox* typeInfo, const std::vector<SelData>& sels)
-		: SequentialInstruction(), dst_(dst), src_(src), size_(size), typeInfo_(typeInfo), sels_(sels) {}
+	FI_node_create(const CodeStorage::Insn* insn, size_t dst, size_t src,
+		size_t size, const TypeBox* typeInfo, const std::vector<SelData>& sels)
+		: SequentialInstruction(insn), dst_(dst), src_(src), size_(size),
+		typeInfo_(typeInfo), sels_(sels) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "node  \tr" << this->dst_ << ", r" << this->src_;
@@ -533,10 +577,11 @@ class FI_node_free : public SequentialInstruction {
 
 public:
 
-	FI_node_free(size_t dst)
-		: SequentialInstruction(), dst_(dst) {}
+	FI_node_free(const CodeStorage::Insn* insn, size_t dst)
+		: SequentialInstruction(insn), dst_(dst) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "free  \tr" << this->dst_;
@@ -552,24 +597,29 @@ class FI_iadd : public SequentialInstruction {
 
 public:
 
-	FI_iadd(size_t dst, size_t src1, size_t src2)
-		: SequentialInstruction(), dst_(dst), src1_(src1), src2_(src2) {}
+	FI_iadd(const CodeStorage::Insn* insn, size_t dst, size_t src1, size_t src2)
+		: SequentialInstruction(insn), dst_(dst), src1_(src1), src2_(src2) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
-		return os << "iadd  \tr" << this->dst_ << ", r" << this->src1_ << ", r" << this->src2_;
+		return os << "iadd  \tr" << this->dst_ << ", r" << this->src1_
+			<< ", r" << this->src2_;
 	}
 
 };
 
+// checks whether there is no garbage
 class FI_check : public SequentialInstruction {
 
 public:
 
-	FI_check() : SequentialInstruction(fi_type_e::fiCheck) {}
+	FI_check(const CodeStorage::Insn* insn)
+		: SequentialInstruction(insn, fi_type_e::fiCheck) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "check ";
@@ -584,10 +634,11 @@ class FI_assert : public SequentialInstruction {
 
 public:
 
-	FI_assert(size_t dst, const Data& cst)
-		: SequentialInstruction(), dst_(dst), cst_(cst) {}
+	FI_assert(const CodeStorage::Insn* insn, size_t dst, const Data& cst)
+		: SequentialInstruction(insn), dst_(dst), cst_(cst) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "assert\tr" << this->dst_ << ", " << this->cst_;
@@ -595,17 +646,28 @@ public:
 
 };
 
-class FI_abort : public SequentialInstruction {
+// aborts the program execution (exit)
+class FI_abort : public AbstractInstruction {
 
 public:
 
-	FI_abort() : SequentialInstruction(fi_type_e::fiAbort) {}
+	FI_abort(const CodeStorage::Insn* insn)
+		: AbstractInstruction(insn, fi_type_e::fiAbort) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "abort ";
 	}
+
+	/**
+	 * @copydoc AbstractInstruction::finalize
+	 */
+	virtual void finalize(
+		const std::unordered_map<const CodeStorage::Block*, AbstractInstruction*>&,
+		std::vector<AbstractInstruction*>::const_iterator
+	) {}
 
 };
 
@@ -617,29 +679,36 @@ class FI_build_struct : public SequentialInstruction {
 
 public:
 
-	FI_build_struct(size_t dst, size_t start, const std::vector<size_t>& offsets)
-		: SequentialInstruction(), dst_(dst), start_(start), offsets_(offsets) {}
+	FI_build_struct(const CodeStorage::Insn* insn, size_t dst, size_t start,
+		const std::vector<size_t>& offsets)
+		: SequentialInstruction(insn), dst_(dst), start_(start), offsets_(offsets) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		os << "mov   \tr" << this->dst_ << ", {";
-		for (size_t i = 0; i < this->offsets_.size(); ++i)
+		for (size_t i = 0; i < this->offsets_.size(); ++i) {
 			os << " +" << this->offsets_[i] << ":r" << this->start_ + i;
+		}
+
 		return os << " }";
 	}
 
 };
 
+// allocate new global variable and fill it with the content of the specified register
 class FI_push_greg : public SequentialInstruction {
 
 	size_t src_;
 
 public:
 
-	FI_push_greg(size_t src) : SequentialInstruction(), src_(src) {}
+	FI_push_greg(const CodeStorage::Insn* insn, size_t src)
+		: SequentialInstruction(insn), src_(src) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "gpush \tr" << this->src_;
@@ -653,9 +722,11 @@ class FI_pop_greg : public SequentialInstruction {
 
 public:
 
-	FI_pop_greg(size_t dst) : SequentialInstruction(), dst_(dst) {}
+	FI_pop_greg(const CodeStorage::Insn* insn, size_t dst)
+		: SequentialInstruction(insn), dst_(dst) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "gpop \tr" << this->dst_;
@@ -669,9 +740,11 @@ class FI_print_heap : public SequentialInstruction {
 
 public:
 
-	FI_print_heap(const struct SymCtx* ctx) : SequentialInstruction(), ctx_(ctx) {}
+	FI_print_heap(const CodeStorage::Insn* insn, const struct SymCtx* ctx)
+		: SequentialInstruction(insn), ctx_(ctx) {}
 
-	virtual void execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state);
+	virtual void execute(ExecutionManager& execMan,
+		const AbstractInstruction::StateType& state);
 
 	virtual std::ostream& toStream(std::ostream& os) const {
 		return os << "prh ";

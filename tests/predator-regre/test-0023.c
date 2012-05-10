@@ -17,4 +17,21 @@ int main() {
         ___sl_plot("then-branch");
     else
         ___sl_plot("else-branch");
+
+    return 0;
 }
+
+/**
+ * @file test-0023.c
+ *
+ * @brief show-case of non-deterministic condition handling
+ *
+ * - plots 3 heap graphs:
+ *     - before the condition
+ *     - "then" branch
+ *     - "else" branch
+ *
+ * @attention
+ * This description is automatically imported from tests/predator-regre/README.
+ * Any changes made to this comment will be thrown away on the next import.
+ */

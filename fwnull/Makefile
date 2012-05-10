@@ -18,7 +18,7 @@
 CMAKE           ?= cmake
 CTEST           ?= ctest
 
-.PHONY: all clean distclean distcheck version.h
+.PHONY: all check clean cppcheck distclean distcheck version.h
 
 all: version.h
 	$(MAKE) -C ../cl_build # make sure the libcl.so is up2date
@@ -29,8 +29,12 @@ all: version.h
 check: all
 	cd ../fwnull_build && $(CTEST) --output-on-failure
 
+cppcheck: all
+	cppcheck --enable=style,performance,portability,information,missingInclude \
+		--template gcc .
+
 version.h:
-	@if test -d ../.git; then \
+	@if test -e ../.git; then \
 		printf "#define FWNULL_GIT_SHA1 \"%s\"\n" \
 			`git log -1 | head -1 | cut -f2 -d" "` \
 			| tee $@.tmp \
@@ -39,7 +43,7 @@ version.h:
 		fi
 
 clean:
-	if test -d ../.git; then rm -f version.h; fi
+	if test -e ../.git; then rm -f version.h; fi
 	if test -e ../fwnull_build/Makefile; then \
 		$(MAKE) clean -C ../fwnull_build; \
 	fi

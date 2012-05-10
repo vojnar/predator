@@ -48,4 +48,16 @@ int main()
 
     if (ps != &s)
         free(ps);
+
+    return 0;
 }
+
+/**
+ * @file test-0074.c
+ *
+ * @brief regression test focused on nested struct offset computation
+ *
+ * @attention
+ * This description is automatically imported from tests/predator-regre/README.
+ * Any changes made to this comment will be thrown away on the next import.
+ */

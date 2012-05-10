@@ -30,13 +30,11 @@
 #include "abstractbox.hh"
 #include "boxman.hh"
 #include "connection_graph.hh"
+#include "restart_request.hh"
+
+#include "config.h"
 
 class Folding {
-
-	FAE& fae;
-	BoxMan& boxMan;
-
-	std::unordered_map<Box, std::set<std::pair<size_t, size_t>>, boost::hash<Box>> boxCache;
 
 protected:
 
@@ -71,11 +69,11 @@ protected:
 
 			if (s1[i].root != s2[i].root)
 				return false;
-
-			if (s1[i].forwardSelector != s2[i].forwardSelector)
+/*
+			if (*s1[i].fwdSelectors.begin() != *s2[i].fwdSelectors.begin())
 				return false;
-
-			if (s1[i].backwardSelector != s2[i].backwardSelector)
+*/
+			if (s1[i].bwdSelector != s2[i].bwdSelector)
 				return false;
 
 			if (s1[i].defines != s2[i].defines)
@@ -87,48 +85,79 @@ protected:
 
 	}
 
-	void cutBox(TA<label_type>& res, TA<label_type>& complement,
-		ConnectionGraph::CutpointSignature& complementSignature, size_t root, size_t target,
-		const ConnectionGraph::StateToCutpointSignatureMap& signatures) {
+	const ConnectionGraph::StateToCutpointSignatureMap& getSignatures(size_t root) {
+
+		assert(root < this->signatureMap.size());
+
+		if (!this->signatureMap[root].first) {
+
+			ConnectionGraph::computeSignatures(
+				this->signatureMap[root].second, *this->fae.roots[root]
+			);
+
+			this->signatureMap[root].first = true;
+
+		}
+
+		assert(this->signatureMap[root].first);
+
+		return this->signatureMap[root].second;
+
+	}
+
+	void invalidateSignatures(size_t root) {
+
+		assert(root < this->signatureMap.size());
+
+		this->signatureMap[root].first = false;
+
+	}
+
+	void componentCut(TA<label_type>& res, TA<label_type>& complement,
+		ConnectionGraph::CutpointSignature& complementSignature, size_t root, size_t state,
+		size_t target
+	) {
 
 		assert(root < this->fae.roots.size());
 		assert(this->fae.roots[root]);
 
 		const TA<label_type>& src = *this->fae.roots[root];
 
+		res.addFinalStates(src.getFinalStates());
+
+		complement.addFinalState(state);
+
+		auto& signatures = this->getSignatures(root);
+
 		std::unordered_set<const AbstractBox*> boxes;
 
 		// enumerate which boxes to fold
-		for (auto k = src.getFinalStates().begin(); k != src.getFinalStates().end(); ++k) {
+		for (auto i = src.begin(state); i != src.end(state, i); ++i) {
 
-			for (auto i = src.begin(*k); i != src.end(*k, i); ++i) {
+			size_t lhsOffset = 0;
 
-				size_t lhsOffset = 0;
+			const TT<label_type>& t = *i;
 
-				const TT<label_type>& t = *i;
+			for (auto& box : t.label()->getNode()) {
 
-				for (auto& box : t.label()->getNode()) {
+				// look for target cutpoint
+				for (size_t j = 0; j < box->getArity(); ++j) {
 
-					// look for target cutpoint
-					for (size_t j = 0; j < box->getArity(); ++j) {
+					assert(lhsOffset + j < t.lhs().size());
 
-						assert(lhsOffset + j < t.lhs().size());
+					if (ConnectionGraph::containsCutpoint(
+						Folding::getSignature(t.lhs()[lhsOffset + j], signatures), target)
+					) {
 
-						if (ConnectionGraph::containsCutpoint(
-							Folding::getSignature(t.lhs()[lhsOffset + j], signatures), target)
-						) {
+						boxes.insert(box);
 
-							boxes.insert(box);
-
-							break;
-
-						}
+						break;
 
 					}
 
-					lhsOffset += box->getArity();
-
 				}
+
+				lhsOffset += box->getArity();
 
 			}
 
@@ -136,97 +165,98 @@ protected:
 
 		ConnectionGraph::CutpointSignature tmp;
 
-		for (auto k = src.getFinalStates().begin(); k != src.getFinalStates().end(); ++k) {
+		for (auto i = src.begin(); i != src.end(); ++i) {
 
-			size_t freshFinalState = this->fae.freshState();
+			const TT<label_type>& t = *i;
 
-			for (auto i = src.begin(*k); i != src.end(*k, i); ++i) {
+			if (t.rhs() != state) {
 
-				std::vector<size_t> lhs, cLhs;
-				std::vector<const AbstractBox*> label, cLabel;
+				res.addTransition(t);
+				complement.addTransition(t);
 
-				size_t lhsOffset = 0;
-
-				const TT<label_type>& t = *i;
-
-				tmp.clear();
-
-				// split transition
-				for (auto& box : t.label()->getNode()) {
-
-					if (boxes.count(box) == 0) {
-
-						Folding::copyBox(lhs, label, box, t.lhs(), lhsOffset);
-
-					} else {
-
-						for (size_t j = 0; j < box->getArity(); ++j) {
-
-							assert(lhsOffset + j < t.lhs().size());
-
-							ConnectionGraph::processStateSignature(
-								tmp,
-								(StructuralBox*)box,
-								j,
-								t.lhs()[lhsOffset + j],
-								Folding::getSignature(t.lhs()[lhsOffset + j], signatures)
-							);
-
-						}
-
-						Folding::copyBox(cLhs, cLabel, box, t.lhs(), lhsOffset);
-
-					}
-
-					lhsOffset += box->getArity();
-
-				}
-
-				ConnectionGraph::normalizeSignature(tmp);
-
-				assert(tmp.size());
-
-				if (complementSignature.empty())
-					complementSignature = tmp;
-
-				// a bit hacky but who cares
-				assert(Folding::isSignaturesCompatible(complementSignature, tmp));
-
-				for (size_t i = 0; i < tmp.size(); ++i) {
-
-					if (complementSignature[i].joint)
-						complementSignature[i].joint = tmp[i].joint;
-
-				}
-
-				assert(label.size());
-				FAE::reorderBoxes(label, lhs);
-				res.addTransition(lhs, this->fae.boxMan->lookupLabel(label), freshFinalState);
-
-				assert(cLabel.size());
-				FAE::reorderBoxes(cLabel, cLhs);
-				complement.addTransition(cLhs, this->fae.boxMan->lookupLabel(cLabel), freshFinalState);
+				continue;
 
 			}
 
-			res.addFinalState(freshFinalState);
-			complement.addFinalState(freshFinalState);
+			std::vector<size_t> lhs, cLhs;
+			std::vector<const AbstractBox*> label, cLabel;
+
+			size_t lhsOffset = 0;
+
+			tmp.clear();
+
+			// split transition
+			for (auto& box : t.label()->getNode()) {
+
+				if (boxes.count(box) == 0) {
+
+					Folding::copyBox(lhs, label, box, t.lhs(), lhsOffset);
+
+				} else {
+
+					for (size_t j = 0; j < box->getArity(); ++j) {
+
+						assert(lhsOffset + j < t.lhs().size());
+
+						ConnectionGraph::processStateSignature(
+							tmp,
+							(StructuralBox*)box,
+							j,
+							t.lhs()[lhsOffset + j],
+							Folding::getSignature(t.lhs()[lhsOffset + j], signatures)
+						);
+
+					}
+
+					Folding::copyBox(cLhs, cLabel, box, t.lhs(), lhsOffset);
+
+				}
+
+				lhsOffset += box->getArity();
+
+			}
+
+			ConnectionGraph::normalizeSignature(tmp);
+
+			assert(tmp.size());
+
+			// did we arrive here for the first time?
+			if (complementSignature.empty())
+				complementSignature = tmp;
+
+			// a bit hacky but who cares
+			assert(Folding::isSignaturesCompatible(complementSignature, tmp));
+
+			for (size_t i = 0; i < tmp.size(); ++i) {
+
+				complementSignature[i].refCount = std::max(complementSignature[i].refCount, tmp[i].refCount);
+
+				complementSignature[i].fwdSelectors.insert(
+					tmp[i].fwdSelectors.begin(), tmp[i].fwdSelectors.end()
+				);
+
+			}
+
+			assert(label.size());
+			FAE::reorderBoxes(label, lhs);
+			res.addTransition(lhs, this->fae.boxMan->lookupLabel(label), state);
+
+			assert(cLabel.size());
+			FAE::reorderBoxes(cLabel, cLhs);
+			complement.addTransition(cLhs, this->fae.boxMan->lookupLabel(cLabel), state);
 
 		}
-
-		src.copyTransitions(res);
-		src.copyTransitions(complement);
 
 	}
 
 	std::pair<std::shared_ptr<TA<label_type>>, std::shared_ptr<TA<label_type>>> separateCutpoint(
-		ConnectionGraph::CutpointSignature& boxSignature, size_t root, size_t cutpoint,
-		const ConnectionGraph::StateToCutpointSignatureMap& signatures) {
+		ConnectionGraph::CutpointSignature& boxSignature, size_t root, size_t state,
+		size_t cutpoint) {
 
 		auto ta = std::shared_ptr<TA<label_type>>(this->fae.allocTA());
 		auto tmp = std::shared_ptr<TA<label_type>>(this->fae.allocTA());
 
-		this->cutBox(*ta, *tmp, boxSignature, root, cutpoint, signatures);
+		this->componentCut(*ta, *tmp, boxSignature, root, state, cutpoint);
 
 		auto tmp2 = std::shared_ptr<TA<label_type>>(this->fae.allocTA());
 
@@ -247,16 +277,14 @@ protected:
 
 	}
 
-	std::shared_ptr<TA<label_type>> joinBox(const TA<label_type>& source, size_t root,
+	std::shared_ptr<TA<label_type>> joinBox(const TA<label_type>& src, size_t state, size_t root,
 		const Box* box, const ConnectionGraph::CutpointSignature& signature) {
 
 		auto ta = std::shared_ptr<TA<label_type>>(this->fae.allocTA());
 
-		size_t state = source.getFinalState();
+		ta->addFinalStates(src.getFinalStates());
 
-		ta->addFinalState(state);
-
-		for (auto i = source.begin(); i != source.end(); ++i) {
+		for (auto i = src.begin(); i != src.end(); ++i) {
 
 			if (i->rhs() != state) {
 
@@ -273,7 +301,7 @@ protected:
 
 			for (auto& cutpoint : signature) {
 
-				if (cutpoint.root == root)
+				if ((cutpoint.root == root) && (src.getFinalStates().count(state)))
 					continue;
 
 				lhs.push_back(
@@ -282,7 +310,7 @@ protected:
 
 			}
 
-			FAE::reorderBoxes(label, lhs);
+			FA::reorderBoxes(label, lhs);
 
 			ta->addTransition(lhs, this->fae.boxMan->lookupLabel(label), state);
 
@@ -295,9 +323,14 @@ protected:
 	static void updateSelectorMap(std::unordered_map<size_t, size_t>& m, size_t selector,
 		const ConnectionGraph::CutpointSignature& signature) {
 
-		for (auto& cutpoint : signature)
+		for (auto& cutpoint : signature) {
 
-			m.insert(std::make_pair(cutpoint.root, selector));
+			auto p = m.insert(std::make_pair(cutpoint.root, selector));
+
+			if (!p.second && p.first->second > selector)
+				p.first->second = selector;
+
+		}
 
 	}
 
@@ -355,14 +388,21 @@ protected:
 
 	}
 
-	static bool checkSelectorMap(const std::unordered_map<size_t, size_t>& selectorMap,
-		const TA<label_type>& ta, const ConnectionGraph::StateToCutpointSignatureMap& stateMap) {
+	bool checkSelectorMap(const std::unordered_map<size_t, size_t>& selectorMap,
+		size_t root, size_t state) {
 
-		for (TA<label_type>::iterator i = ta.accBegin(); i != ta.accEnd(i); ++i) {
+		assert(root < this->fae.roots.size());
+		assert(this->fae.roots[root]);
+
+		auto& signatures = this->getSignatures(root);
+
+		auto& ta = *this->fae.roots[root];
+
+		for (TA<label_type>::iterator i = ta.begin(state); i != ta.end(state, i); ++i) {
 
 			std::unordered_map<size_t, size_t> m;
 
-			Folding::computeSelectorMap(m, *i, stateMap);
+			Folding::computeSelectorMap(m, *i, signatures);
 
 			if (m != selectorMap)
 				return false;
@@ -373,14 +413,24 @@ protected:
 
 	}
 
-	static void computeSelectorMap(std::unordered_map<size_t, size_t>& selectorMap,
-		const TA<label_type>& ta, const ConnectionGraph::StateToCutpointSignatureMap& stateMap) {
+	void computeSelectorMap(std::unordered_map<size_t, size_t>& selectorMap,
+		size_t root, size_t state) {
 
-		assert(ta.accBegin() != ta.accEnd());
+		assert(root < this->fae.roots.size());
+		assert(this->fae.roots[root]);
 
-		Folding::computeSelectorMap(selectorMap, *ta.accBegin(), stateMap);
+		auto& ta = *this->fae.roots[root];
 
-		assert(Folding::checkSelectorMap(selectorMap, ta, stateMap));
+		assert(ta.begin(state) != ta.end(state));
+/*
+		for (TA<label_type>::iterator i = ta.accBegin(); i != ta.accEnd(i); ++i)
+			Folding::computeSelectorMap(selectorMap, *i, stateMap);
+*/
+		auto& signatures = this->getSignatures(root);
+
+		Folding::computeSelectorMap(selectorMap, *ta.begin(state), signatures);
+
+		assert(this->checkSelectorMap(selectorMap, root, state));
 
 	}
 
@@ -426,6 +476,7 @@ protected:
 			inputMap[index[cutpointSelectorPair.first] - 1] = cutpointSelectorPair.second;
 
 			++count;
+
 		}
 
 		inputMap.resize(count);
@@ -470,32 +521,32 @@ protected:
 
 	}
 */
-	bool makeType1Box(std::shared_ptr<const Box>& box, size_t root, size_t aux, const std::set<size_t>& forbidden, bool conditional = true, bool test = false) {
+	const Box* getBox(const Box& box, bool conditional) {
 
-		box = nullptr;
+		return (conditional)?(this->boxMan.lookupBox(box)):(this->boxMan.getBox(box));
 
-		if (forbidden.count(aux))
-			return false;
+	}
+
+	const Box* makeType1Box(size_t root, size_t state, size_t aux, const std::set<size_t>& forbidden,
+		bool conditional = true, bool test = false) {
 
 		assert(root < this->fae.roots.size());
+		assert(this->fae.roots[root]);
 
 		std::vector<size_t> index(this->fae.roots.size(), (size_t)(-1)), inputMap;
 		std::unordered_map<size_t, size_t> selectorMap;
-		ConnectionGraph::StateToCutpointSignatureMap signatures;
 		ConnectionGraph::CutpointSignature outputSignature;
 
 		size_t start = 0;
 
-		ConnectionGraph::computeSignatures(signatures, *this->fae.roots[root]);
-
-		auto p = this->separateCutpoint(outputSignature, root, aux, signatures);
+		auto p = this->separateCutpoint(outputSignature, root, state, aux);
 
 		index[root] = start++;
 
 		for (auto& cutpoint : outputSignature) {
 
 			if (forbidden.count(cutpoint.root))
-				return false;
+				return nullptr;
 
 			assert(cutpoint.root < index.size());
 
@@ -504,10 +555,10 @@ protected:
 
 		}
 
-		Folding::computeSelectorMap(selectorMap, *this->fae.roots[root], signatures);
+		Folding::computeSelectorMap(selectorMap, root, state);
 		Folding::extractInputMap(inputMap, selectorMap, root, index);
 
-		box = std::shared_ptr<Box>(
+		auto box = std::unique_ptr<Box>(
 			this->boxMan.createType1Box(
 				root,
 				this->relabelReferences(*p.second, index),
@@ -517,42 +568,43 @@ protected:
 			)
 		);
 
-		auto boxPtr = (conditional)?(this->boxMan.lookupBox(*box)):(this->boxMan.getBox(*box));
-
-		if (!boxPtr)
-			return false;
+		auto boxPtr = this->getBox(*box, conditional);
 
 		if (test)
-			return true;
+			return boxPtr;
 
-		this->fae.roots[root] = this->joinBox(*p.first, root, boxPtr, outputSignature);
+		if (!boxPtr)
+			return nullptr;
+
+		CL_CDEBUG(2, *(AbstractBox*)boxPtr << " found");
+
+		this->fae.roots[root] = this->joinBox(*p.first, state, root, boxPtr, outputSignature);
 		this->fae.connectionGraph.invalidate(root);
 
-		return true;
+		this->invalidateSignatures(root);
+
+		return boxPtr;
 
 	}
 
-	bool makeType2Box(std::shared_ptr<const Box>& box, size_t root, size_t aux, const std::set<size_t>& forbidden, bool conditional = true, bool test = false) {
-
-		box = nullptr;
-
-		if (forbidden.count(aux))
-			return false;
+	const Box* makeType2Box(size_t root, size_t aux, const std::set<size_t>& forbidden,
+		bool conditional = true, bool test = false) {
 
 		assert(root < this->fae.roots.size());
 		assert(aux < this->fae.roots.size());
+		assert(this->fae.roots[root]);
+		assert(this->fae.roots[aux]);
+
+		size_t finalState = this->fae.roots[root]->getFinalState();
 
 		std::vector<size_t> index(this->fae.roots.size(), (size_t)(-1)), index2, inputMap;
 		std::vector<bool> rootMask(this->fae.roots.size(), false);
 		std::unordered_map<size_t, size_t> selectorMap;
-		ConnectionGraph::StateToCutpointSignatureMap signatures;
-		ConnectionGraph::CutpointSignature outputSignature, inputSignature;
+		ConnectionGraph::CutpointSignature outputSignature, inputSignature, tmpSignature;
 
 		size_t start = 0;
 
-		ConnectionGraph::computeSignatures(signatures, *this->fae.roots[root]);
-
-		auto p = this->separateCutpoint(outputSignature, root, aux, signatures);
+		auto p = this->separateCutpoint(outputSignature, root, finalState, aux);
 
 		index[root] = start++;
 
@@ -562,10 +614,10 @@ protected:
 			assert(cutpoint.root != root);
 */
 			if (cutpoint.root == root)
-				return false;
+				return nullptr;
 
 			if (forbidden.count(cutpoint.root))
-				return false;
+				return nullptr;
 
 			assert(cutpoint.root < index.size());
 
@@ -574,14 +626,12 @@ protected:
 
 		}
 
-		Folding::computeSelectorMap(selectorMap, *this->fae.roots[root], signatures);
+		Folding::computeSelectorMap(selectorMap, root, finalState);
 		Folding::extractInputMap(inputMap, selectorMap, root, index);
 
-		signatures.clear();
-
-		ConnectionGraph::computeSignatures(signatures, *this->fae.roots[aux]);
-
-		auto auxP = this->separateCutpoint(inputSignature, aux, root, signatures);
+		auto auxP = this->separateCutpoint(
+			inputSignature, aux, this->fae.roots[aux]->getFinalState(), root
+		);
 /*
 		if (Folding::isSingular(*auxP.first))
 			return false;
@@ -590,8 +640,11 @@ protected:
 
 		for (auto& cutpoint : inputSignature) {
 
+			if (cutpoint.refCount > 1)
+				return nullptr;
+
 			if (forbidden.count(cutpoint.root))
-				return false;
+				return nullptr;
 
 			assert(cutpoint.root < index.size());
 
@@ -601,17 +654,21 @@ protected:
 
 				index2[cutpoint.root] = start++;
 
+				tmpSignature.push_back(cutpoint);
+
+				inputMap.push_back((size_t)(-1));
+
 			}
 
 		}
 
 		selectorMap.clear();
 
-		Folding::computeSelectorMap(selectorMap, *this->fae.roots[aux], signatures);
+		Folding::computeSelectorMap(selectorMap, aux, this->fae.roots[aux]->getFinalState());
 
 		size_t selector = Folding::extractSelector(selectorMap, root);
 
-		box = std::shared_ptr<Box>(
+		auto box = std::unique_ptr<Box>(
 			this->boxMan.createType2Box(
 				root,
 				this->relabelReferences(*p.second, index),
@@ -625,67 +682,154 @@ protected:
 			)
 		);
 
-		auto boxPtr = (conditional)?(this->boxMan.lookupBox(*box)):(this->boxMan.getBox(*box));
-
-		if (!boxPtr)
-			return false;
+		auto boxPtr = this->getBox(*box, conditional);
 
 		if (test)
-			return true;
+			return boxPtr;
 
-		this->fae.roots[root] = this->joinBox(*p.first, root, boxPtr, outputSignature);
+		if (!boxPtr)
+			return nullptr;
+
+		CL_CDEBUG(2, *(AbstractBox*)boxPtr << " found");
+
+		for (auto& cutpoint : tmpSignature)
+			outputSignature.push_back(cutpoint);
+
+		this->fae.roots[root] = this->joinBox(*p.first, finalState, root, boxPtr, outputSignature);
 		this->fae.connectionGraph.invalidate(root);
+
+		this->invalidateSignatures(root);
 
 		this->fae.roots[aux] = auxP.first;
 		this->fae.connectionGraph.invalidate(aux);
 
-		return true;
+		this->invalidateSignatures(aux);
+
+		return boxPtr;
 
 	}
 
 public:
 
-	bool discover(size_t root, const std::set<size_t>& forbidden, bool conditional) {
+	bool discover1(size_t root, const std::set<size_t>& forbidden, bool conditional) {
 
-		assert(this->fae.connectionGraph.isValid());
 		assert(this->fae.roots.size() == this->fae.connectionGraph.data.size());
 		assert(root < this->fae.roots.size());
 		assert(this->fae.roots[root]);
 
-		CL_CDEBUG(3, "folding: " << this->fae);
+		if (forbidden.count(root))
+			return nullptr;
 
-		std::shared_ptr<const Box> box;
-
+		bool found = false;
+dis1_start:
 		// save state offset
 		this->fae.pushStateOffset();
 
+		this->fae.updateConnectionGraph();
+
 		for (auto& cutpoint : this->fae.connectionGraph.data[root].signature) {
 
-			if (cutpoint.root == root) {
-
-				CL_CDEBUG(3, "type 1 cutpoint detected at root " << root);
-
-				if (this->makeType1Box(box, root, root, forbidden, conditional))
-					return true;
-
-				this->fae.popStateOffset();
-
+			if (cutpoint.root != root)
 				continue;
+
+			CL_CDEBUG(3, "type 1 cutpoint detected at root " << root);
+
+			auto boxPtr = this->makeType1Box(
+				root, this->fae.roots[root]->getFinalState(), root, forbidden, conditional
+			);
+
+			if (boxPtr) {
+
+				found = true;
+
+				goto dis1_start;
 
 			}
 
-			if (cutpoint.joint) {
+			this->fae.popStateOffset();
 
-				CL_CDEBUG(3, "type 2 cutpoint detected at root " << root);
+		}
 
-				if (this->makeType1Box(box, root, cutpoint.root, forbidden, conditional))
-					return true;
+		return found;
 
-				this->fae.popStateOffset();
+	}
 
+	bool discover2(size_t root, const std::set<size_t>& forbidden, bool conditional) {
+
+		assert(this->fae.roots.size() == this->fae.connectionGraph.data.size());
+		assert(root < this->fae.roots.size());
+		assert(this->fae.roots[root]);
+
+		if (forbidden.count(root))
+			return nullptr;
+
+		bool found = false;
+dis2_start:
+		// save state offset
+		this->fae.pushStateOffset();
+
+		this->fae.updateConnectionGraph();
+
+		for (auto& cutpoint : this->fae.connectionGraph.data[root].signature) {
+
+			if (cutpoint.refCount < 2)
 				continue;
 
+			auto& signatures = this->getSignatures(root);
+
+			for (auto& stateSignaturePair : signatures) {
+
+				for (auto& tmp : stateSignaturePair.second) {
+
+					if ((tmp.refCount < 2) || tmp.refInherited || (tmp.root != cutpoint.root))
+						continue;
+
+					CL_CDEBUG(3, "type 2 cutpoint detected inside component " << root << " at state q" << stateSignaturePair.first);
+
+					auto boxPtr = this->makeType1Box(
+						root, stateSignaturePair.first, cutpoint.root, forbidden, conditional
+					);
+
+					if (boxPtr) {
+
+						found = true;
+
+						goto dis2_start;
+
+					}
+
+					this->fae.popStateOffset();
+
+				}
+
 			}
+
+		}
+
+		return found;
+
+	}
+
+	bool discover3(size_t root, const std::set<size_t>& forbidden, bool conditional) {
+
+		assert(this->fae.roots.size() == this->fae.connectionGraph.data.size());
+		assert(root < this->fae.roots.size());
+		assert(this->fae.roots[root]);
+
+		if (forbidden.count(root))
+			return nullptr;
+
+		bool found = false;
+dis3_start:
+		// save state offset
+		this->fae.pushStateOffset();
+
+		this->fae.updateConnectionGraph();
+
+		for (auto& cutpoint : this->fae.connectionGraph.data[root].signature) {
+
+			if (forbidden.count(cutpoint.root)/* || cutpoint.joint*/)
+				continue;
 
 			size_t selectorToRoot = ConnectionGraph::getSelectorToTarget(
 				this->fae.connectionGraph.data[cutpoint.root].signature, root
@@ -697,28 +841,153 @@ public:
 			if (selectorToRoot == cutpoint.forwardSelector)
 				continue;
 */
-			size_t root1 = root, root2 = cutpoint.root;
+			assert(!cutpoint.fwdSelectors.empty());
 
-			if (!conditional && (selectorToRoot < cutpoint.forwardSelector) &&
-				this->makeType2Box(box, root2, root1, forbidden, true, true))
+			if (/*(selectorToRoot < *cutpoint.fwdSelectors.begin()) ||*/
+				this->makeType2Box(cutpoint.root, root, forbidden, true, true))
 					continue;
 
-			CL_CDEBUG(3, "type 3 cutpoint detected at roots " << root1 << " and " << root2);
+			CL_CDEBUG(3, "type 3 cutpoint detected at roots " << root << " and " << cutpoint.root);
 
-			if (this->makeType2Box(box, root1, root2, forbidden, conditional))
-				return true;
+			auto boxPtr = this->makeType2Box(root, cutpoint.root, forbidden, conditional);
+
+			if (boxPtr) {
+
+				found = true;
+
+				goto dis3_start;
+
+			}
 
 			this->fae.popStateOffset();
 
 		}
 
-		return false;
+		return found;
 
 	}
+/*
+	bool discover(size_t root, const std::set<size_t>& forbidden) {
 
+		assert(this->fae.connectionGraph.isValid());
+		assert(this->fae.roots.size() == this->fae.connectionGraph.data.size());
+		assert(root < this->fae.roots.size());
+		assert(this->fae.roots[root]);
+
+		if (forbidden.count(root))
+			return false;
+
+		const Box* boxPtr;
+
+		CL_CDEBUG(3, "analysing: " << this->fae);
+
+		// save state offset
+		this->fae.pushStateOffset();
+
+		bool found = false;
+
+		size_t selectorToRoot;
+start:
+		this->fae.updateConnectionGraph();
+
+		for (auto& cutpoint : this->fae.connectionGraph.data[root].signature) {
+
+			if (cutpoint.root == root) {
+
+				CL_CDEBUG(3, "type 1 cutpoint detected at root " << root);
+
+				boxPtr = this->makeType1Box(
+					root, this->fae.roots[root]->getFinalState(), root, forbidden, true
+				);
+
+				if (boxPtr)
+					goto box_found;
+
+				this->fae.popStateOffset();
+
+				continue;
+
+			}
+
+			if (cutpoint.joint) {
+
+				auto& signatures = this->getSignatures(root);
+
+				for (auto& stateSignaturePair : signatures) {
+
+					for (auto& tmp : stateSignaturePair.second) {
+
+						if (!tmp.joint || tmp.joinInherited || (tmp.root != cutpoint.root))
+							continue;
+
+						CL_CDEBUG(3, "type 2 cutpoint detected inside component " << root << " at state q" << stateSignaturePair.first);
+
+						boxPtr = this->makeType1Box(
+							root, stateSignaturePair.first, cutpoint.root, forbidden, true
+						);
+
+						if (boxPtr)
+							goto box_found;
+
+						this->fae.popStateOffset();
+
+					}
+
+				}
+
+				continue;
+
+			}
+
+			if (forbidden.count(cutpoint.root))
+				continue;
+
+			selectorToRoot = ConnectionGraph::getSelectorToTarget(
+				this->fae.connectionGraph.data[cutpoint.root].signature, root
+			);
+
+			if (selectorToRoot == (size_t)(-1))
+				continue;
+*//*
+			if (selectorToRoot == cutpoint.forwardSelector)
+				continue;
+*//*
+			assert(!cutpoint.fwdSelectors.empty());
+
+			CL_CDEBUG(3, "type 3 cutpoint detected at roots " << root << " and " << cutpoint.root);
+
+			boxPtr = this->makeType2Box(root, cutpoint.root, forbidden, true);
+
+			if (boxPtr)
+				goto box_found;
+
+			this->fae.popStateOffset();
+
+			continue;
+box_found:
+			CL_CDEBUG(3, (AbstractBox*)boxPtr << " found");
+
+			found = true;
+
+			if (!this->fae.connectionGraph.data[root].valid)
+				goto start;
+
+		}
+
+		return found;
+
+	}
+*/
 public:
 
-	Folding(FAE& fae, BoxMan& boxMan) : fae(fae), boxMan(boxMan) {}
+	Folding(FAE& fae, BoxMan& boxMan) : fae(fae), boxMan(boxMan), signatureMap(fae.roots.size()) {}
+
+private:
+
+	FAE& fae;
+	BoxMan& boxMan;
+
+	std::vector<std::pair<bool, ConnectionGraph::StateToCutpointSignatureMap>> signatureMap;
 
 };
 

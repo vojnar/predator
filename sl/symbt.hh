@@ -61,7 +61,6 @@ class SymBackTrace {
         ~SymBackTrace();
 
         SymBackTrace(const SymBackTrace &);
-        SymBackTrace& operator=(const SymBackTrace &);
 
         /**
          * @todo consider fitness of this method in the public interface of
@@ -122,12 +121,15 @@ class SymBackTrace {
         /**
          * stream out the backtrace, using CL_NOTE_MSG; or do nothing if the
          * backtrace is trivial
+         * @return true if the backtrace is @b not trivial
          */
-        void printBackTrace(bool forcePtrace = false) const;
+        bool printBackTrace(bool forcePtrace = false) const;
         friend class SymProc;
         friend class SymExecEngine;
 
     private:
+        SymBackTrace& operator=(const SymBackTrace &);
+
         struct Private;
         Private *d;
 };

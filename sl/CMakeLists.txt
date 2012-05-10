@@ -18,10 +18,9 @@
 # project metadata
 cmake_minimum_required(VERSION 2.6)
 project(sl C CXX)
-add_definitions("-I../include")
 enable_testing()
 
-include("../CMakeLists.common")
+include("../build-aux/common.cmake")
 
 option(SL_DEBUG "Set to ON to enable debugging support" OFF)
 if(SL_DEBUG)
@@ -63,6 +62,22 @@ add_library(sl SHARED
 find_library(CL_LIB cl ../cl_build)
 target_link_libraries(sl ${CL_LIB})
 
+# get the full path of libsl.so
+get_property(GCC_PLUG TARGET sl PROPERTY LOCATION)
+message (STATUS "GCC_PLUG: ${GCC_PLUG}")
+
+# helping scripts
+configure_file(${PROJECT_SOURCE_DIR}/slgcc.in     ${PROJECT_BINARY_DIR}/slgcc     @ONLY)
+configure_file(${PROJECT_SOURCE_DIR}/slgccv.in    ${PROJECT_BINARY_DIR}/slgccv    @ONLY)
+configure_file(${PROJECT_SOURCE_DIR}/slgdb.in     ${PROJECT_BINARY_DIR}/slgdb     @ONLY)
+configure_file(${PROJECT_SOURCE_DIR}/probe.sh.in  ${PROJECT_BINARY_DIR}/probe.sh  @ONLY)
+
+configure_file(${PROJECT_SOURCE_DIR}/register-paths.sh.in
+    ${PROJECT_BINARY_DIR}/register-paths.sh                                       @ONLY)
+
+configure_file(${PROJECT_SOURCE_DIR}/chk-error-label-reachability.sh.in
+    ${PROJECT_BINARY_DIR}/chk-error-label-reachability.sh                         @ONLY)
+
 # make install
 install(TARGETS sl DESTINATION lib)
 
@@ -95,30 +110,35 @@ set(tests
     0170 0171 0172 0173 0174 0175 0176 0177 0178 0179
     0180 0181 0182 0183 0184 0185 0186 0187 0188 0189
     0190 0191 0192 0193 0194 0195 0196 0197 0198 0199
-    0200 0201 0202 0203 0204
+    0200 0201 0202 0203 0204 0205      0207 0208 0209
+    0210      0212      0214 0215      0217 0218 0219
+    0220 0221 0222 0223 0224 0225 0226 0227 0228 0229
+    0230 0231 0232 0233 0234      0236 0237
     0300      0302
     0400 0401 0402 0403 0404      0406      0408
-         0411                     0416
+         0411
               0432
+                        0464      0466 0467
     0500 0501 0502 0503 0504 0505           0508 0509
     0510 0511 0512 0513 0514 0515 0516 0517 0518
     0520)
 
 if(TEST_ONLY_FAST)
 else()
-    # expensive tests
+    # expensive tests (ordered from the fastest to the most expensive)
     set(tests ${tests}
-        0167 0414 0415 0124 0417 0157 0521 0412 0405 0409 0407 0410 0413)
+        0416 0167 0124 0415 0414 0418 0417 0471 0412 0157
+        0235 0469 0405 0409 0407 0521 0410 0413 0474)
 endif()
 
-set(cost 1048576)
+set(cost 1)
 
 # FIXME: define this macro more generically, in particular the count of args
 macro(test_predator_smoke label tool arg1 arg2 arg3)
     foreach (num ${tests})
         set(test_name "${label}___example-${num}")
         add_test(${test_name} ${tool} ${arg1} ${arg2} ${arg3}
-            -c "${testdir}/test-${num}.c"
+            -S "${testdir}/test-${num}.c" -o /dev/null
             -I../include/predator-builtins -DPREDATOR
             -fplugin=${sl_BINARY_DIR}/libsl.so
             -fplugin-arg-libsl-args=noplot
@@ -126,7 +146,7 @@ macro(test_predator_smoke label tool arg1 arg2 arg3)
             -fplugin-arg-libsl-verbose=1)
 
         SET_TESTS_PROPERTIES(${test_name} PROPERTIES COST ${cost})
-        MATH(EXPR cost "${cost} - 1")
+        MATH(EXPR cost "${cost} + 1")
     endforeach()
 endmacro()
 
@@ -139,18 +159,18 @@ macro(test_predator_regre name_suff ext arg1)
         # in the error output, which is checked for exact match
         set(cmd "${cmd} -m32")
 
-        set(cmd "${cmd} -c ${testdir}/test-${num}.c")
+        set(cmd "${cmd} -S ${testdir}/test-${num}.c -o /dev/null")
         set(cmd "${cmd} -I../include/predator-builtins -DPREDATOR")
         set(cmd "${cmd} -fplugin=${sl_BINARY_DIR}/libsl.so ${arg1}")
         set(cmd "${cmd} -fplugin-arg-libsl-preserve-ec")
         set(cmd "${cmd} 2>&1")
 
         # filter out messages that are unrelated to our plug-in
-        set(cmd "${cmd} | grep -E '\\\\[-fplugin=libsl.so\\\\]\$|compiler error|undefined symbol'")
+        set(cmd "${cmd} | (grep -E '\\\\[-fplugin=libsl.so\\\\]\$|compiler error|undefined symbol'; true)")
         set(cmd "${cmd} | sed 's/ \\\\[-fplugin=libsl.so\\\\]\$//'")
 
         # filter out NOTE messages with internal location
-        set(cmd "${cmd} | grep -v 'note: .*\\\\[internal location\\\\]'")
+        set(cmd "${cmd} | (grep -v 'note: .*\\\\[internal location\\\\]'; true)")
 
         # drop absolute paths
         set(cmd "${cmd} | sed 's|^[^:]*/||'")
@@ -158,10 +178,10 @@ macro(test_predator_regre name_suff ext arg1)
         # ... and finally diff with the expected output
         set(cmd "${cmd} | diff -up ${testdir}/test-${num}.err${ext} -")
         set(test_name "test-${num}.c${name_suff}")
-        add_test(${test_name} sh -c "${cmd}")
+        add_test(${test_name} bash -o pipefail -c "${cmd}")
 
         SET_TESTS_PROPERTIES(${test_name} PROPERTIES COST ${cost})
-        MATH(EXPR cost "${cost} - 1")
+        MATH(EXPR cost "${cost} + 1")
     endforeach()
 endmacro(test_predator_regre)
 

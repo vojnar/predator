@@ -33,8 +33,26 @@
 
 #include "microcode.hh"
 
+namespace
+{
+
+inline const cl_loc* getLoc(const AbstractInstruction::StateType& state)
+{
+	// Assertions
+	assert(state.second != nullptr);
+	assert(state.second->instr != nullptr);
+
+	if (!state.second->instr->insn())
+		return nullptr;
+
+	return &(state.second->instr->insn()->loc);
+}
+
+} // namespace
+
 // FI_cond
-void FI_cond::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_cond::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	assert((*state.first)[this->src_].isBool());
 
@@ -43,7 +61,8 @@ void FI_cond::execute(ExecutionManager& execMan, const AbstractInstruction::Stat
 }
 
 void FI_cond::finalize(
-	const std::unordered_map<const CodeStorage::Block*, AbstractInstruction*>& codeIndex,
+	const std::unordered_map<const CodeStorage::Block*,
+	AbstractInstruction*>& codeIndex,
 	std::vector<AbstractInstruction*>::const_iterator
 ) {
 
@@ -66,7 +85,8 @@ void FI_cond::finalize(
 }
 
 // FI_acc_sel
-void FI_acc_sel::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_acc_sel::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	auto data = (*state.first)[this->dst_];
 
@@ -74,21 +94,24 @@ void FI_acc_sel::execute(ExecutionManager& execMan, const AbstractInstruction::S
 
 		std::stringstream ss;
 		ss << "dereferenced value is not a valid reference [" << data << ']';
-		throw ProgramError(ss.str());
+		throw ProgramError(ss.str(), getLoc(state));
 
 	}
 
 	std::vector<FAE*> dst;
 
-	Splitting(*state.second->fae).isolateOne(dst, data.d_ref.root, data.d_ref.displ + this->offset_);
+	Splitting(*state.second->fae).isolateOne(dst, data.d_ref.root,
+		data.d_ref.displ + this->offset_);
 
-	for (auto fae : dst)
-		execMan.enqueue(state.second, execMan.allocRegisters(*state.first), std::shared_ptr<const FAE>(fae), this->next_);
-
+	for (auto fae : dst) {
+		execMan.enqueue(state.second, execMan.allocRegisters(*state.first),
+			std::shared_ptr<const FAE>(fae), this->next_);
+	}
 }
 
 // FI_acc_set
-void FI_acc_set::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_acc_set::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	auto data = (*state.first)[this->dst_];
 
@@ -96,7 +119,7 @@ void FI_acc_set::execute(ExecutionManager& execMan, const AbstractInstruction::S
 
 		std::stringstream ss;
 		ss << "dereferenced value is not a valid reference [" << data << ']';
-		throw ProgramError(ss.str());
+		throw ProgramError(ss.str(), getLoc(state));
 
 	}
 
@@ -106,13 +129,16 @@ void FI_acc_set::execute(ExecutionManager& execMan, const AbstractInstruction::S
 		dst, data.d_ref.root, data.d_ref.displ + this->base_, this->offsets_
 	);
 
-	for (auto fae : dst)
-		execMan.enqueue(state.second, execMan.allocRegisters(*state.first), std::shared_ptr<const FAE>(fae), this->next_);
+	for (auto fae : dst) {
+		execMan.enqueue(state.second, execMan.allocRegisters(*state.first),
+			std::shared_ptr<const FAE>(fae), this->next_);
+	}
 
 }
 
 // FI_acc_all
-void FI_acc_all::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_acc_all::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	auto data = (*state.first)[this->dst_];
 
@@ -120,23 +146,27 @@ void FI_acc_all::execute(ExecutionManager& execMan, const AbstractInstruction::S
 
 		std::stringstream ss;
 		ss << "dereferenced value is not a valid reference [" << data << ']';
-		throw ProgramError(ss.str());
+		throw ProgramError(ss.str(), getLoc(state));
 
 	}
 
 	std::vector<FAE*> dst;
 
 	Splitting(*state.second->fae).isolateSet(
-		dst, data.d_ref.root, 0, state.second->fae->getType(data.d_ref.root)->getSelectors()
+		dst, data.d_ref.root, 0,
+		state.second->fae->getType(data.d_ref.root)->getSelectors()
 	);
 
-	for (auto fae : dst)
-		execMan.enqueue(state.second, execMan.allocRegisters(*state.first), std::shared_ptr<const FAE>(fae), this->next_);
+	for (auto fae : dst) {
+		execMan.enqueue(state.second, execMan.allocRegisters(*state.first),
+			std::shared_ptr<const FAE>(fae), this->next_);
+	}
 
 }
 
 // FI_load_cst
-void FI_load_cst::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_load_cst::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	(*state.first)[this->dst_] = this->data_;
 
@@ -145,7 +175,8 @@ void FI_load_cst::execute(ExecutionManager& execMan, const AbstractInstruction::
 }
 
 // FI_move_reg
-void FI_move_reg::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_move_reg::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	(*state.first)[this->dst_] = (*state.first)[this->src_];
 
@@ -154,7 +185,8 @@ void FI_move_reg::execute(ExecutionManager& execMan, const AbstractInstruction::
 }
 
 // FI_bnot
-void FI_bnot::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_bnot::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	assert((*state.first)[this->dst_].isBool());
 
@@ -165,7 +197,8 @@ void FI_bnot::execute(ExecutionManager& execMan, const AbstractInstruction::Stat
 }
 
 // FI_inot
-void FI_inot::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_inot::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	assert((*state.first)[this->dst_].isInt());
 
@@ -176,7 +209,8 @@ void FI_inot::execute(ExecutionManager& execMan, const AbstractInstruction::Stat
 }
 
 // FI_move_reg_offs
-void FI_move_reg_offs::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_move_reg_offs::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	auto data = (*state.first)[this->src_];
 
@@ -184,7 +218,7 @@ void FI_move_reg_offs::execute(ExecutionManager& execMan, const AbstractInstruct
 
 		std::stringstream ss;
 		ss << "dereferenced value is not a valid reference [" << data << ']';
-		throw ProgramError(ss.str());
+		throw ProgramError(ss.str(), getLoc(state));
 
 	}
 
@@ -196,7 +230,8 @@ void FI_move_reg_offs::execute(ExecutionManager& execMan, const AbstractInstruct
 }
 
 // FI_move_reg_inc
-void FI_move_reg_inc::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_move_reg_inc::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	auto data = (*state.first)[this->src1_];
 
@@ -204,7 +239,7 @@ void FI_move_reg_inc::execute(ExecutionManager& execMan, const AbstractInstructi
 
 		std::stringstream ss;
 		ss << "dereferenced value is not a valid reference [" << data << ']';
-		throw ProgramError(ss.str());
+		throw ProgramError(ss.str(), getLoc(state));
 
 	}
 
@@ -215,8 +250,9 @@ void FI_move_reg_inc::execute(ExecutionManager& execMan, const AbstractInstructi
 
 }
 
-// FI_get_sreg
-void FI_get_greg::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+// FI_get_greg
+void FI_get_greg::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	(*state.first)[this->dst_] = VirtualMachine(*state.second->fae).varGet(this->src_);
 
@@ -224,8 +260,9 @@ void FI_get_greg::execute(ExecutionManager& execMan, const AbstractInstruction::
 
 }
 
-// FI_set_sreg
-void FI_set_greg::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+// FI_set_greg
+void FI_set_greg::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	VirtualMachine(*state.second->fae).varSet(this->dst_, (*state.first)[this->src_]);
 
@@ -233,8 +270,9 @@ void FI_set_greg::execute(ExecutionManager& execMan, const AbstractInstruction::
 
 }
 
-// FI_move_ABP
-void FI_get_ABP::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+// FI_get_ABP
+void FI_get_ABP::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	(*state.first)[this->dst_] = VirtualMachine(*state.second->fae).varGet(ABP_INDEX);
 	(*state.first)[this->dst_].d_ref.displ += this->offset_;
@@ -244,7 +282,8 @@ void FI_get_ABP::execute(ExecutionManager& execMan, const AbstractInstruction::S
 }
 
 // FI_load
-void FI_load::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_load::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	assert((*state.first)[this->src_].isRef());
 
@@ -259,7 +298,8 @@ void FI_load::execute(ExecutionManager& execMan, const AbstractInstruction::Stat
 }
 
 // FI_load_ABP
-void FI_load_ABP::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_load_ABP::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	VirtualMachine vm(*state.second->fae);
 
@@ -272,7 +312,8 @@ void FI_load_ABP::execute(ExecutionManager& execMan, const AbstractInstruction::
 }
 
 // FI_store
-void FI_store::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_store::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	assert((*state.first)[this->dst_].isRef());
 
@@ -316,7 +357,8 @@ void FI_loads::execute(ExecutionManager& execMan, const AbstractInstruction::Sta
 	const Data& data = (*state.first)[this->src_];
 
 	VirtualMachine(*state.second->fae).nodeLookupMultiple(
-		data.d_ref.root, data.d_ref.displ + this->base_, this->offsets_, (*state.first)[this->dst_]
+		data.d_ref.root, data.d_ref.displ + this->base_, this->offsets_,
+		(*state.first)[this->dst_]
 	);
 
 	execMan.enqueue(state, this->next_);
@@ -324,7 +366,8 @@ void FI_loads::execute(ExecutionManager& execMan, const AbstractInstruction::Sta
 }
 
 // FI_stores
-void FI_stores::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_stores::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	assert((*state.first)[this->dst_].isRef());
 
@@ -344,7 +387,8 @@ void FI_stores::execute(ExecutionManager& execMan, const AbstractInstruction::St
 }
 
 // FI_alloc
-void FI_alloc::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_alloc::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	assert((*state.first)[this->src_].isInt());
 
@@ -356,12 +400,23 @@ void FI_alloc::execute(ExecutionManager& execMan, const AbstractInstruction::Sta
 }
 
 // FI_node_create
-void FI_node_create::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_node_create::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
+
+	if ((*state.first)[this->src_].isRef() || (*state.first)[this->src_].isNull()) {
+
+		(*state.first)[this->dst_] = (*state.first)[this->src_];
+
+		execMan.enqueue(state.second, state.first, state.second->fae, this->next_);
+
+		return;
+
+	}
 
 	assert((*state.first)[this->src_].isVoidPtr());
 
 	if ((*state.first)[this->src_].d_void_ptr_size != this->size_)
-		throw ProgramError("allocated block size mismatch");
+		throw ProgramError("allocated block size mismatch", getLoc(state));
 
 	std::shared_ptr<FAE> fae = std::shared_ptr<FAE>(new FAE(*state.second->fae));
 
@@ -379,7 +434,7 @@ void FI_node_alloc::execute(ExecutionManager& execMan, const AbstractInstruction
 	assert((*state.first)[this->src_].isInt());
 
 	if ((*state.first)[this->src_].d_int != this->type_->size)
-		throw ProgramError("allocated block size mismatch");
+		throw ProgramError("allocated block size mismatch", getLoc(state));
 
 	std::vector<SelData> sels;
 	NodeBuilder::buildNode(sels, this->type_);
@@ -404,7 +459,8 @@ void FI_node_alloc::execute(ExecutionManager& execMan, const AbstractInstruction
 }
 */
 // FI_node_free
-void FI_node_free::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_node_free::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	assert((*state.first)[this->dst_].isRef());
 
@@ -413,7 +469,9 @@ void FI_node_free::execute(ExecutionManager& execMan, const AbstractInstruction:
 	const Data& data = (*state.first)[this->dst_];
 
 	if (data.d_ref.displ != 0)
-		throw ProgramError("releasing a pointer which points inside an allocated block");
+		throw ProgramError(
+			"releasing a pointer which points inside an allocated block",
+			getLoc(state));
 
 	VirtualMachine(*fae).nodeDelete(data.d_ref.root);
 
@@ -422,12 +480,15 @@ void FI_node_free::execute(ExecutionManager& execMan, const AbstractInstruction:
 }
 
 // FI_iadd
-void FI_iadd::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_iadd::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
-	assert((*state.first)[this->src1_].isInt() && (*state.first)[this->src2_].isInt());
+	assert((*state.first)[this->src1_].isInt() &&
+		(*state.first)[this->src2_].isInt());
 
 	(*state.first)[this->dst_] = Data::createInt(
-		((*state.first)[this->src1_].d_int + (*state.first)[this->src2_].d_int > 0)?(1):(0)
+		((*state.first)[this->src1_].d_int +
+		 (*state.first)[this->src2_].d_int > 0)?(1):(0)
 	);
 
 	execMan.enqueue(state, this->next_);
@@ -435,7 +496,8 @@ void FI_iadd::execute(ExecutionManager& execMan, const AbstractInstruction::Stat
 }
 
 // FI_check
-void FI_check::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_check::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	state.second->fae->updateConnectionGraph();
 
@@ -446,10 +508,12 @@ void FI_check::execute(ExecutionManager& execMan, const AbstractInstruction::Sta
 }
 
 // FI_assert
-void FI_assert::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_assert::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	if ((*state.first)[this->dst_] != this->cst_) {
-		CL_CDEBUG(1, "registers: " << utils::wrap(*state.first) << ", heap:" << std::endl << *state.second->fae);
+		CL_CDEBUG(1, "registers: " << utils::wrap(*state.first) << ", heap:"
+			<< std::endl << *state.second->fae);
 		throw std::runtime_error("assertion failed");
 	}
 
@@ -458,19 +522,23 @@ void FI_assert::execute(ExecutionManager& execMan, const AbstractInstruction::St
 }
 
 // FI_abort
-void FI_abort::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_abort::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	execMan.traceFinished(state.second);
 
 }
 
 // FI_build_struct
-void FI_build_struct::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_build_struct::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	std::vector<Data::item_info> items;
 
 	for (size_t i = 0; i < this->offsets_.size(); ++i)
-		items.push_back(std::make_pair(this->offsets_[i], (*state.first)[this->start_ + i]));
+		items.push_back(std::make_pair(this->offsets_[i],
+			(*state.first)[this->start_ + i])
+		);
 
 	(*state.first)[this->dst_] = Data::createStruct(items);
 
@@ -479,7 +547,8 @@ void FI_build_struct::execute(ExecutionManager& execMan, const AbstractInstructi
 }
 
 // FI_push_greg
-void FI_push_greg::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_push_greg::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	std::shared_ptr<FAE> fae = std::shared_ptr<FAE>(new FAE(*state.second->fae));
 
@@ -490,7 +559,8 @@ void FI_push_greg::execute(ExecutionManager& execMan, const AbstractInstruction:
 }
 
 // FI_pop_greg
-void FI_pop_greg::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_pop_greg::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	std::shared_ptr<FAE> fae = std::shared_ptr<FAE>(new FAE(*state.second->fae));
 
@@ -513,7 +583,8 @@ struct DumpCtx {
 
 		std::vector<size_t> offs;
 
-		for (std::vector<SelData>::const_iterator i = cd.ctx.sfLayout.begin(); i != cd.ctx.sfLayout.end(); ++i)
+		for (std::vector<SelData>::const_iterator i = cd.ctx.sfLayout.begin();
+			i != cd.ctx.sfLayout.end(); ++i)
 			offs.push_back((*i).offset);
 
 		Data data;
@@ -521,10 +592,12 @@ struct DumpCtx {
 		vm.nodeLookupMultiple(vm.varGet(ABP_INDEX).d_ref.root, 0, offs, data);
 
 		boost::unordered_map<size_t, Data> tmp;
-		for (std::vector<Data::item_info>::const_iterator i = data.d_struct->begin(); i != data.d_struct->end(); ++i)
+		for (std::vector<Data::item_info>::const_iterator i = data.d_struct->begin();
+			i != data.d_struct->end(); ++i)
 			tmp.insert(make_pair(i->first, i->second));
 
-		for (CodeStorage::TVarSet::const_iterator i = cd.ctx.fnc.vars.begin(); i != cd.ctx.fnc.vars.end(); ++i) {
+		for (CodeStorage::TVarSet::const_iterator i = cd.ctx.fnc.vars.begin();
+			i != cd.ctx.fnc.vars.end(); ++i) {
 
 			const CodeStorage::Var& var = cd.ctx.fnc.stor->vars[*i];
 
@@ -554,7 +627,8 @@ struct DumpCtx {
 };
 
 // FI_print_heap
-void FI_print_heap::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_print_heap::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state) {
 
 	CL_NOTE("local variables: " << DumpCtx(*this->ctx_, *state.second->fae));
 	CL_NOTE("heap:" << *state.second->fae);

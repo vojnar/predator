@@ -67,10 +67,16 @@ protected:
 							continue;
 						}
 						lhsOffset += box->getArity();
-						assert(!found);
+
+						if (found)
+							assert(false);
+
 						found = true;
 					}
-					assert(found);
+
+					if (!found)
+						assert(false);
+
 				} else {
 					lhs = i->lhs();
 					label = i->label()->getNode();
@@ -91,7 +97,7 @@ public:
 
 	void unfoldBox(size_t root, const Box* box) {
 
-		CL_CDEBUG(3, "unfolding " << *(AbstractBox*)box << " at root " << root << std::endl << this->fae);
+//		CL_CDEBUG(3, "unfolding " << *(AbstractBox*)box << " at root " << root << std::endl << this->fae);
 
 		assert(root < this->fae.roots.size());
 		assert(this->fae.roots[root]);
@@ -152,6 +158,8 @@ public:
 		this->boxMerge(*this->fae.roots[aux], tmp, *box->getInput(), nullptr, index);
 
 		this->fae.connectionGraph.invalidate(aux);
+
+//		this->fae.updateConnectionGraph();
 
 	}
 

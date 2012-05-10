@@ -47,15 +47,31 @@ struct CmpOpTraits {
 
 bool describeCmpOp(CmpOpTraits *pTraits, const enum cl_binop_e code);
 
+inline bool areComparableTypes(const TObjType clt1, const TObjType clt2) {
+    if (!clt1 || !clt2)
+        return false;
+
+    enum cl_type_e code1 = clt1->code;
+    enum cl_type_e code2 = clt2->code;
+    if (code1 == code2)
+        return true;
+
+    if (CL_TYPE_ENUM == code1)
+        code1 = CL_TYPE_INT;
+    if (CL_TYPE_ENUM == code2)
+        code2 = CL_TYPE_INT;
+
+    return (code1 == code2);
+}
+
 TValId compareValues(
-        SymHeap                     &sh,
+        SymHeap                    &sh,
         const enum cl_binop_e       code,
-        const TObjType              clt,
         const TValId                v1,
         const TValId                v2);
 
 bool reflectCmpResult(
-        SymHeap                     &sh,
+        SymProc                    &proc,
         const enum cl_binop_e       code,
         const bool                  branch,
         const TValId                v1,
@@ -151,6 +167,13 @@ void describeUnknownVal(
         const TValId                 val,
         const char                  *action);
 
+void executeMemmove(
+        SymProc                     &proc,
+        const TValId                 valDst,
+        const TValId                 valSrc,
+        const TValId                 valSize,
+        const bool                   allowOverlap);
+
 void executeMemset(
         SymProc                     &proc,
         const TValId                 addr,
@@ -205,7 +228,7 @@ class SymExecCore: public SymProc {
         bool exec(SymState &dst, const CodeStorage::Insn &insn);
 
         void execHeapAlloc(SymState &dst, const CodeStorage::Insn &,
-                           const TSizeOf size, const bool nullified);
+                           const TSizeRange size, const bool nullified);
 
         void execFree(TValId val);
 

@@ -20,6 +20,7 @@
 #include "config.h"
 #include "symutil.hh"
 
+#include <cl/cl_msg.hh>
 #include <cl/storage.hh>
 
 #include "symbt.hh"
@@ -49,10 +50,10 @@ bool numFromVal(IR::TInt *pDst, const SymHeapCore &sh, const TValId val) {
     }
 
     const CustomValue cv = sh.valUnwrapCustom(val);
-    if (CV_INT_RANGE != cv.code)
+    if (CV_INT_RANGE != cv.code())
         return false;
 
-    const IR::Range &rng = cv.data.rng;
+    const IR::Range &rng = cv.rng();
     if (!isSingular(rng))
         // we are asked to return a scalar, but only integral range is available
         return false;
@@ -69,16 +70,22 @@ bool rngFromVal(IR::Range *pDst, const SymHeapCore &sh, const TValId val) {
         return true;
     }
 
+    if (VAL_NULL == sh.valRoot(val)) {
+        // extract offset range of a NULL value
+        *pDst = sh.valOffsetRange(val);
+        return true;
+    }
+
     if (VT_CUSTOM != sh.valTarget(val))
         // not a custom value
         return false;
 
     CustomValue cv = sh.valUnwrapCustom(val);
-    if (CV_INT_RANGE != cv.code)
+    if (CV_INT_RANGE != cv.code())
         // not an integral range
         return false;
 
-    *pDst = cv.data.rng;
+    *pDst = cv.rng();
     return true;
 }
 
@@ -114,26 +121,107 @@ bool stringFromVal(const char **pDst, const SymHeap &sh, const TValId val) {
         return false;
 
     CustomValue cv = sh.valUnwrapCustom(val);
-    if (CV_STRING != cv.code)
+    if (CV_STRING != cv.code())
         // not a string literal
         return false;
 
-    *pDst = cv.data.str;
+    *pDst = cv.str().c_str();
     CL_BREAK_IF(!*pDst);
     return true;
 }
 
 const IR::Range& rngFromCustom(const CustomValue &cv) {
-    const ECustomValue code = cv.code;
+    const ECustomValue code = cv.code();
     switch (code) {
         case CV_INT_RANGE:
-            return cv.data.rng;
+            return cv.rng();
             break;
 
         default:
             CL_BREAK_IF("invalid call of rngFromVal()");
             return IR::FullRange;
     }
+}
+
+bool compareIntRanges(
+        bool                        *pDst,
+        const enum cl_binop_e       code,
+        const IR::Range             &range1,
+        const IR::Range             &range2)
+{
+    CmpOpTraits ct;
+    if (!describeCmpOp(&ct, code))
+        return false;
+
+    if (isAligned(range1) || isAligned(range2)) {
+        CL_DEBUG("compareIntRanges() does not support alignment yet");
+        return false;
+    }
+
+    // check for interval overlapping (strict)
+    const bool ltr = (range1.hi < range2.lo);
+    const bool rtl = (range2.hi < range1.lo);
+
+    if (ct.preserveEq && ct.preserveNeq) {
+        // either == or !=
+
+        if (ltr || rtl) {
+            // no overlaps on the given intervals
+            *pDst = ct.negative;
+            return true;
+        }
+
+        if (isSingular(range1) && isSingular(range2)) {
+            // we got two integral constants and both are equal
+            CL_BREAK_IF(range1.lo != range2.hi);
+            *pDst = !ct.negative;
+            return true;
+        }
+
+        // we got something ambiguous
+        return false;
+    }
+
+    if (ct.negative) {
+        // either < or >
+
+        if ((ltr     && ct.leftToRight) || (rtl     && ct.rightToLeft)) {
+            *pDst = true;
+            return true;
+        }
+    }
+    else {
+        // either <= or >=
+
+        if ((rtl     && ct.leftToRight) || (ltr     && ct.rightToLeft)) {
+            *pDst = false;
+            return true;
+        }
+    }
+
+    // check for interval overlapping (weak)
+    const bool ltrWeak = (range1.hi <= range2.lo);
+    const bool rtlWeak = (range2.hi <= range1.lo);
+
+    if (ct.negative) {
+        // either < or >
+
+        if ((rtlWeak && ct.leftToRight) || (ltrWeak && ct.rightToLeft)) {
+            *pDst = false;
+            return true;
+        }
+    }
+    else {
+        // either <= or >=
+
+        if ((ltrWeak && ct.leftToRight) || (rtlWeak && ct.rightToLeft)) {
+            *pDst = true;
+            return true;
+        }
+    }
+
+    // we got something ambiguous
+    return false;
 }
 
 void moveKnownValueToLeft(
@@ -247,23 +335,15 @@ void initGlVar(SymHeap &sh, const CVar &cv) {
     (void) proc.varAt(cv);
 }
 
-void getPtrValues(TValList &dst, SymHeap &sh, TValId at) {
-    ObjList ptrs;
-    sh.gatherLivePointers(ptrs, at);
-    BOOST_FOREACH(const ObjHandle &obj, ptrs) {
-        const TValId val = obj.value();
-        if (0 < val)
-            dst.push_back(val);
-    }
-}
-
-void redirectRefs(
+bool /* anyChange */ redirectRefs(
         SymHeap                 &sh,
         const TValId            pointingFrom,
         const TValId            pointingTo,
         const TValId            redirectTo,
         const TOffset           offHead)
 {
+    bool anyChange = false;
+
     // go through all objects pointing at/inside pointingTo
     ObjList refs;
     sh.pointedBy(refs, pointingTo);
@@ -295,5 +375,8 @@ void redirectRefs(
 
         // store the redirected value
         obj.setValue(result);
+        anyChange = true;
     }
+
+    return anyChange;
 }

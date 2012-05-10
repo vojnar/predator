@@ -16,14 +16,15 @@
 # along with predator.  If not, see <http://www.gnu.org/licenses/>.
 
 MIRROR          ?= http://ftp.fi.muni.cz/pub/linux/gentoo
+GCC_MIRROR      ?= http://ftp.fi.muni.cz/pub/gnu/gnu/gcc
 
 BOOST_STABLE    ?= boost_1_46_1#            # released Boost
 BOOST_STABLE_TGZ?= $(BOOST_STABLE).tar.bz2# # tarball of released Boost
 BOOST_STABLE_URL?= $(MIRROR)/distfiles/$(BOOST_STABLE_TGZ)
 
-GCC_STABLE      ?= gcc-4.6.2#               # released gcc
+GCC_STABLE      ?= gcc-4.7.0#               # released gcc
 GCC_STABLE_TGZ  ?= $(GCC_STABLE).tar.bz2#   # tarball of released gcc
-GCC_STABLE_URL  ?= $(MIRROR)/distfiles/$(GCC_STABLE_TGZ)
+GCC_STABLE_URL  ?= $(GCC_MIRROR)/$(GCC_STABLE)/$(GCC_STABLE_TGZ)
 
 GCC_SRC         ?= gcc-src#                 # SVN working copy for gcc src
 GCC_BUILD       ?= gcc-build#               # working directory gcc build
@@ -42,16 +43,21 @@ CURL            ?= curl --location -v#      # URL grabber command-line
 GIT             ?= git#                     # use this to override git(1)
 SVN             ?= svn#                     # use this to override svn(1)
 
-DIRS_BUILD      ?= cl fwnull sl fa
+ANALYZERS       ?= fwnull sl fa
+DIRS_BUILD      ?= cl $(ANALYZERS)
 
 .PHONY: all check clean distcheck distclean api cl/api sl/api ChangeLog \
 	build_boost \
-	build_gcc build_gcc_svn update_gcc update_gcc_src_only lnk_gcc_headers
+	build_gcc build_gcc_svn update_gcc update_gcc_src_only \
+	$(DIRS_BUILD)
 
-all: include/gcc
-	$(foreach dir, $(DIRS_BUILD), $(MAKE) -C $(dir) $@ &&) true
+all: cl
+	$(MAKE) $(ANALYZERS)
 
-check: include/gcc
+$(DIRS_BUILD):
+	$(MAKE) -C $@
+
+check: all
 	$(foreach dir, $(DIRS_BUILD), $(MAKE) -C $(dir) $@ &&) true
 
 clean:
@@ -60,7 +66,7 @@ clean:
 distclean:
 	$(foreach dir, $(DIRS_BUILD), $(MAKE) -C $(dir) $@ &&) true
 
-distcheck: include/gcc
+distcheck:
 	$(foreach dir, $(DIRS_BUILD), $(MAKE) -C $(dir) $@ &&) true
 
 cl/api:
@@ -124,11 +130,6 @@ build_gcc: $(GCC_SRC)
 		fi
 	cd $(GCC_BUILD) && $(MAKE)
 	cd $(GCC_BUILD) && $(MAKE) -j1 install
-	$(MAKE) lnk_gcc_headers
-	test -d .git || (test -d sl && sed \
-		"s|GCC_HOST=.*$$|GCC_HOST='`readlink -f gcc-install/bin/gcc`'|" -i \
-		chk-error-label-reachability.sh register-paths.sh sl/probe.sh sl/slgcc \
-		|| true)
 
 # updated SVN working directory of gcc
 update_gcc_src_only:
@@ -158,22 +159,6 @@ build_gcc_svn:
 	$(SVN) co svn://gcc.gnu.org/svn/gcc/trunk $(GCC_SRC)
 	$(MAKE) build_gcc
 
-# fallback for buggy configurations
-include/gcc:
-	@test -r include/gcc/gcc-plugin.h || $(MAKE) lnk_gcc_headers
-
-lnk_gcc_headers: gcc-install/lib/gcc
-	cd include && ln -fsvT \
-		`ls -td ../gcc-install/lib/gcc/*/4.[5-7]*/plugin/include|head -1` gcc
-
 ChangeLog:
 	git log --pretty="format:%ad  %an%n%n%w(80,8,8)%B%n" --date=short -- \
 		$(CHLOG_WATCH) > $@
-
-gcc-install/lib/gcc:
-	@echo "*** 'gcc-install/lib/gcc' does not exist.  If you want to proceed"
-	@echo "*** with standalone build of gcc, try 'make build_gcc' first.  If"
-	@echo "*** it does not help, consult ./README.  If anything goes wrong,"
-	@echo "*** please submit a bug report to <idudka@fit.vutbr.cz>."
-	@echo
-	@false

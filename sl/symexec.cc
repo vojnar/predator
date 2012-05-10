@@ -171,6 +171,8 @@ class SymExecEngine: public IStatsProvider {
     private:
         void initEngine(const SymHeap &init);
 
+        void joinCallResults();
+
         void updateState(SymHeap &sh, const CodeStorage::Block *ofBlock);
 
         void updateStateInBranch(
@@ -324,20 +326,20 @@ void SymExecEngine::updateStateInBranch(
         const TValId                v1,
         const TValId                v2)
 {
+    SymProc proc(sh, &bt_);
+    proc.setLocation(lw_);
+
     sh.traceUpdate(new Trace::CondNode(sh.traceNode()->parent(),
                 &insnCmp, &insnCnd, /* det */ false, branch));
 
     const enum cl_binop_e code = static_cast<enum cl_binop_e>(insnCmp.subCode);
-    if (!reflectCmpResult(sh, code, branch, v1, v2))
-        CL_DEBUG_MSG(lw_, "unable to reflect comparison result");
+    if (!reflectCmpResult(proc, code, branch, v1, v2))
+        CL_DEBUG_MSG(lw_, "XXX unable to reflect comparison result");
 
     LDP_PLOT(nondetCond, sh);
 
-    SymProc proc(sh, &bt_);
-    proc.setLocation(lw_);
-    proc.killInsn(insnCmp);
-
     const unsigned targetIdx = !branch;
+    proc.killInsn(insnCmp);
     proc.killPerTarget(insnCnd, targetIdx);
 
     const CodeStorage::Block *target = insnCnd.targets[targetIdx];
@@ -356,23 +358,6 @@ bool isTrackableValue(const SymHeap &sh, const TValId val) {
     return false;
 }
 
-inline bool areComparableTypes(const TObjType clt1, const TObjType clt2) {
-    if (!clt1 || !clt2)
-        return false;
-
-    enum cl_type_e code1 = clt1->code;
-    enum cl_type_e code2 = clt2->code;
-    if (code1 == code2)
-        return true;
-
-    if (CL_TYPE_ENUM == code1)
-        code1 = CL_TYPE_INT;
-    if (CL_TYPE_ENUM == code2)
-        code2 = CL_TYPE_INT;
-
-    return (code1 == code2);
-}
-
 bool SymExecEngine::bypassNonPointers(
         SymProc                                     &proc,
         const CodeStorage::Insn                     &insnCmp,
@@ -388,6 +373,7 @@ bool SymExecEngine::bypassNonPointers(
         return false;
 
     // white-list some values that are worth tracking
+    // cppcheck-suppress unreachableCode
     SymHeap &sh = proc.sh();
     if (isTrackableValue(sh, v1) || isTrackableValue(sh, v2))
         return false;
@@ -435,8 +421,7 @@ void SymExecEngine::execCondInsn() {
     // read operands
     const struct cl_operand &op1 = insnCmp->operands[/* src1 */ 1];
     const struct cl_operand &op2 = insnCmp->operands[/* src2 */ 2];
-    const struct cl_type *cltSrc = op1.type;
-    CL_BREAK_IF(!areComparableTypes(cltSrc, op2.type));
+    CL_BREAK_IF(!areComparableTypes(op1.type, op2.type));
 
     // a working area in case of VAL_TRUE and VAL_FALSE
     SymHeap sh(localState_[heapIdx_]);
@@ -448,7 +433,7 @@ void SymExecEngine::execCondInsn() {
     const enum cl_binop_e code = static_cast<enum cl_binop_e>(insnCmp->subCode);
     const TValId v1 = proc.valFromOperand(op1);
     const TValId v2 = proc.valFromOperand(op2);
-    const TValId val = compareValues(sh, code, cltSrc, v1, v2);
+    const TValId val = compareValues(sh, code, v1, v2);
 
     // check whether we know where to go
     switch (val) {
@@ -615,7 +600,7 @@ bool /* complete */ SymExecEngine::execInsn() {
                          << " (initial size of state was " << hCnt << ")");
         }
 
-        // terrify the user by our current schedule if he is asking for that :-)
+        // time to respond to a single pending signal
         this->processPendingSignals();
 
         if (isTerm) {
@@ -691,18 +676,29 @@ bool /* complete */ SymExecEngine::execBlock() {
     return true;
 }
 
-void joinNewResults(
-        SymHeapList             &dst,
-        const SymState          &src)
-{
+void SymExecEngine::joinCallResults() {
 #if SE_ABSTRACT_ON_CALL_DONE
     SymStateWithJoin all;
 #else
     SymHeapUnion all;
 #endif
-    all.swap(dst);
-    all.SymState::insert(src);
-    all.swap(dst);
+    all.swap(nextLocalState_);
+
+    const unsigned cnt = callResults_.size();
+    for (unsigned i = 0; i < cnt; ++i) {
+        if (1 < cnt) {
+            CL_DEBUG("*** SymExecEngine::joinCallResults() is processing heap #"
+                     << i << " of " << cnt << " heaps total (size of target is "
+                     << all.size() << ")");
+        }
+
+        // time to respond to a single pending signal
+        this->processPendingSignals();
+
+        all.insert(callResults_[i]);
+    }
+
+    all.swap(nextLocalState_);
 }
 
 bool /* complete */ SymExecEngine::run() {
@@ -710,7 +706,7 @@ bool /* complete */ SymExecEngine::run() {
 
     if (waiting_) {
         // pick up results of the pending call
-        joinNewResults(nextLocalState_, callResults_);
+        this->joinCallResults();
 
         // we're on the way from a just completed function call...
         if (!this->execBlock())
@@ -925,10 +921,7 @@ const CodeStorage::Fnc* SymExec::resolveCallInsn(
 
     fnc = stor_.fncs[uid];
     if (!isDefined(*fnc)) {
-        const struct cl_cst &cst = opFnc.data.cst;
-        const char *name = cst.data.cst_fnc.name;
-        CL_BREAK_IF(CL_TYPE_FNC != cst.code || !name);
-
+        const char *name = nameOf(*fnc);
         CL_WARN_MSG(lw, "ignoring call of undefined function: "
                 << name << "()");
 

@@ -28,6 +28,7 @@
 
 #include <unordered_map>
 
+#include "tatimint.hh"
 #include "types.hh"
 //#include "forestaut.hh"
 #include "treeaut.hh"
@@ -119,14 +120,18 @@ public:
 
 	virtual const std::set<size_t>& inputCoverage(size_t index) const {
 
-		assert(index == 0);
+		if (!(index == 0))
+			assert(false);
+
 		return s[1];
 
 	}
 
 	virtual size_t selectorToInput(size_t index) const {
 
-		assert(index == 0);
+		if (!(index == 0))
+			assert(false);
+
 		return this->data->offset;
 
 	}
@@ -134,6 +139,12 @@ public:
 	virtual size_t outputReachable(size_t) const {
 
 		return (size_t)(-1);
+
+	}
+
+	virtual size_t getRealRefCount(size_t) const {
+
+		return 1;
 
 	}
 
@@ -159,6 +170,52 @@ class Box : public StructuralBox {
 
 	bool selfReference;
 
+public:
+
+	struct Signature {
+
+		ConnectionGraph::CutpointSignature outputSignature;
+		size_t inputIndex;
+		ConnectionGraph::CutpointSignature inputSignature;
+		std::vector<std::pair<size_t,size_t>> selectors;
+
+		Signature(
+			const ConnectionGraph::CutpointSignature& outputSignature,
+			size_t inputIndex,
+			const ConnectionGraph::CutpointSignature& inputSignature,
+			const std::vector<std::pair<size_t,size_t>>& selectors
+		) : outputSignature(outputSignature), inputIndex(inputIndex),
+		inputSignature(inputSignature), selectors(selectors) {}
+
+		bool operator==(const Signature& rhs) const {
+
+			return this->outputSignature == rhs.outputSignature &&
+				this->inputIndex == rhs.inputIndex &&
+				this->inputSignature == rhs.inputSignature &&
+				this->selectors == rhs.selectors;
+
+		}
+
+		friend size_t hash_value(const Signature& signature) {
+
+			size_t h = 0;
+			boost::hash_combine(h, signature.outputSignature);
+			boost::hash_combine(h, signature.inputIndex);
+			boost::hash_combine(h, signature.inputSignature);
+			boost::hash_combine(h, signature.selectors);
+			return h;
+
+		}
+
+	};
+
+	Signature getSignature() const {
+
+		return Signature(
+			this->outputSignature, this->inputIndex, this->inputSignature, this->selectors
+		);
+
+	}
 
 protected:
 
@@ -387,6 +444,14 @@ public:
 
 	}
 
+	virtual size_t getRealRefCount(size_t input) const {
+
+		assert(input < this->outputSignature.size());
+
+		return this->outputSignature[input].realRefCount;
+
+	}
+
 	const TA<label_type>* getOutput() const {
 
 		return this->output.get();
@@ -417,6 +482,12 @@ public:
 
 	}
 
+	static bool lessOrEqual(const TA<label_type>& a, const TA<label_type>& b) {
+
+		return TA<label_type>::subseteq(a, b);
+
+	}
+
 	size_t getSelector(size_t input) const {
 
 		assert(input < this->inputMap.size());
@@ -434,7 +505,7 @@ public:
 public:
 
 	virtual void toStream(std::ostream& os) const {
-		os << this->name;
+		os << this->name << '(' << this->arity << ')';
 	}
 
 	friend size_t hash_value(const Box& box) {
@@ -477,6 +548,61 @@ public:
 			return true;
 
 		return Box::equal(*this->input, *rhs.input);
+
+	}
+
+	bool operator<=(const Box& rhs) const {
+
+		if ((bool)this->input != (bool)rhs.input)
+			return false;
+
+		if (this->input) {
+
+			if (this->inputIndex != rhs.inputIndex)
+				return false;
+
+			if (this->inputSignature != rhs.inputSignature)
+				return false;
+
+
+		}
+
+		if (this->outputSignature != rhs.outputSignature)
+			return false;
+
+
+		if (this->selectors != rhs.selectors)
+			return false;
+
+		if (!Box::lessOrEqual(*this->output, *rhs.output))
+			return false;
+
+		if (!this->input)
+			return true;
+
+		return Box::lessOrEqual(*this->input, *rhs.input);
+
+	}
+
+	bool simplifiedLessThan(const Box& rhs) const {
+
+		if ((bool)this->input != (bool)rhs.input)
+			return false;
+
+		if (this->input) {
+
+			if (this->inputIndex != rhs.inputIndex)
+				return false;
+
+		}
+
+		if (!Box::lessOrEqual(*this->output, *rhs.output))
+			return false;
+
+		if (!this->input)
+			return true;
+
+		return Box::lessOrEqual(*this->input, *rhs.input);
 
 	}
 

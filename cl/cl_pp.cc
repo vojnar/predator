@@ -97,7 +97,8 @@ class ClPrettyPrint: public ICodeListener {
         void printBareType      (const struct cl_type *, bool expandFnc);
         void printVarType       (const struct cl_operand *);
         void printNestedVar     (const struct cl_operand *);
-        void printRecordAcessor (const struct cl_accessor **);
+        void printOffsetAccessor(const int off);
+        void printRecordAccessor(const struct cl_accessor **);
         void printOperandVar    (const struct cl_operand *);
         void printOperand       (const struct cl_operand *);
         void printAssignmentLhs (const struct cl_operand *);
@@ -202,6 +203,46 @@ void ClPrettyPrint::bb_open(
         << SSD_INLINE_COLOR(C_LIGHT_RED, ":") << std::endl;
 }
 
+namespace {
+    string prettyEscaped(const char *raw_str) {
+        std::string ret;
+        unsigned char c;
+        while ((c = *raw_str++)) {
+            if (isprint(c) && '\'' != c && '\"' != c && '\\' != c) {
+                // preserve printable chars
+                ret += static_cast<char>(c);
+                continue;
+            }
+
+            // escape non-printable chars
+            ret += '\\';
+
+            switch (c) {
+                // simple escaping
+                case '\'':  ret += '\'';    continue;
+                case '\"':  ret += '\"';    continue;
+                case '\\':  ret += '\\';    continue;
+                case '\n':  ret += 'n';     continue;
+                case '\r':  ret += 'r';     continue;
+                case '\t':  ret += 't';     continue;
+
+                // octal escaping
+                default:
+                    ret += ('0' + ( c        >> 6 ));
+                    ret += ('0' + ((c & 070) >> 3 ));
+                    ret += ('0' +  (c & 007)       );
+            }
+        }
+
+        return ret;
+    }
+
+    inline string prettyEscaped(const char raw_char) {
+        const char raw_str[] = { raw_char, '\0' };
+        return prettyEscaped(raw_str);
+    }
+}
+
 void ClPrettyPrint::printIntegralCst(const struct cl_operand *op) {
     const struct cl_type *type = op->type;
     const int value = op->data.cst.data.cst_int.value;
@@ -219,8 +260,11 @@ void ClPrettyPrint::printIntegralCst(const struct cl_operand *op) {
                     CL_DEBUG("2+ accessors by CL_OPERAND_CST pointer");
             }
 
-            if (value)
+            if (value) {
+                const std::ios_base::fmtflags oldFlags = out_.flags();
                 SSD_COLORIZE(out_, C_LIGHT_RED) << "0x" << std::hex << value;
+                out_.flags(oldFlags);
+            }
             else
                 SSD_COLORIZE(out_, C_WHITE) << "NULL";
 
@@ -250,15 +294,12 @@ void ClPrettyPrint::printIntegralCst(const struct cl_operand *op) {
             break;
 
         case CL_TYPE_CHAR:
-            // TODO: quote special chars?
             SSD_COLORIZE(out_, C_WHITE)
-                << '\''
-                << static_cast<char>(value)
-                << '\'';
+                << "\'" << prettyEscaped(static_cast<char>(value)) << "\'";
             break;
 
         default:
-            CL_TRAP;
+            CL_BREAK_IF("printIntegralCst() got something special");
     }
 }
 
@@ -275,7 +316,8 @@ void ClPrettyPrint::printCst(const struct cl_operand *op) {
                 CL_ERROR_MSG(&loc_, "anonymous function");
                 break;
             }
-            out_ << SSD_INLINE_COLOR(C_LIGHT_GREEN, op->data.cst.data.cst_fnc.name);
+            out_ << SSD_INLINE_COLOR(C_LIGHT_GREEN,
+                    op->data.cst.data.cst_fnc.name);
             break;
 
         case CL_TYPE_STRING: {
@@ -284,7 +326,8 @@ void ClPrettyPrint::printCst(const struct cl_operand *op) {
                     CL_ERROR_MSG(&loc_, "CL_TYPE_STRING with no string");
                     break;
                 }
-                SSD_COLORIZE(out_, C_LIGHT_PURPLE) << "\"" << text << "\"";
+                SSD_COLORIZE(out_, C_LIGHT_PURPLE)
+                    << "\"" << prettyEscaped(text) << "\"";
             }
             break;
 
@@ -299,8 +342,7 @@ void ClPrettyPrint::printCst(const struct cl_operand *op) {
 
 namespace {
     const char* typeName(const struct cl_type *clt) {
-        if (!clt)
-            CL_TRAP;
+        CL_BREAK_IF(!clt);
 
         const char *name = clt->name;
         return (name)
@@ -333,6 +375,11 @@ void ClPrettyPrint::printBareType(const struct cl_type *clt, bool expandFnc) {
         }
     }
 deref_done:
+
+    if (!clt) {
+        out_ << SSD_INLINE_COLOR(C_LIGHT_RED, "<invalid type>");
+        return;
+    }
 
     enum cl_type_e code = clt->code;
     switch (code) {
@@ -429,7 +476,6 @@ namespace {
             case CL_SCOPE_GLOBAL:       return 'G';
             case CL_SCOPE_STATIC:       return 'S';
             case CL_SCOPE_FUNCTION:     return 'F';
-            case CL_SCOPE_BB:           return 'B';
             default:
                 CL_TRAP;
                 return 'U';
@@ -477,7 +523,16 @@ namespace {
     }
 }
 
-void ClPrettyPrint::printRecordAcessor(const struct cl_accessor **ac) {
+void ClPrettyPrint::printOffsetAccessor(const int off) {
+    out_ << ssd::Color(C_LIGHT_RED) << "<";
+
+    if (0 <= off)
+        out_ << "+";
+
+    out_ << off << ">" << ssd::Color(C_NO_COLOR);
+}
+
+void ClPrettyPrint::printRecordAccessor(const struct cl_accessor **ac) {
     std::string tag;
     int offset = 0;
     readItemAccessInfo(*ac, &tag, &offset);
@@ -535,8 +590,12 @@ void ClPrettyPrint::printOperandVar(const struct cl_operand *op) {
                 out_ << SSD_INLINE_COLOR(C_LIGHT_RED, "]");
                 break;
 
+            case CL_ACCESSOR_OFFSET:
+                this->printOffsetAccessor(ac->data.offset.off);
+                break;
+
             case CL_ACCESSOR_ITEM:
-                this->printRecordAcessor(&ac);
+                this->printRecordAccessor(&ac);
                 break;
 
             case CL_ACCESSOR_REF:

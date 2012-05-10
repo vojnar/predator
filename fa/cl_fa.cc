@@ -17,6 +17,7 @@
  * along with forester.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+// Standard library headers
 #include <vector>
 #include <unordered_map>
 #include <fstream>
@@ -26,18 +27,18 @@
 #include <cstdlib>
 #include <signal.h>
 
+// Boost headers
 #include <boost/algorithm/string.hpp>
 
+// Code Listener headers
 #include <cl/easy.hh>
-#include <cl/cl_msg.hh>
-#include <cl/storage.hh>
-#include <cl/cldebug.hh>
-#include <cl/clutil.hh>
 #include "../cl/ssd.h"
 
+// Forester headers
 #include "symctx.hh"
 #include "symexec.hh"
 #include "programerror.hh"
+#include "notimpl_except.hh"
 
 SymExec se;
 
@@ -47,8 +48,6 @@ void setDbgFlag(int) {
 
 // required by the gcc plug-in API
 extern "C" { int plugin_is_GPL_compatible; }
-
-std::ostream& operator<<(std::ostream& os, const cl_loc& loc);
 
 struct Config {
 
@@ -71,7 +70,7 @@ struct Config {
 	}
 
 };
-
+/*
 struct BoxDb {
 
 	std::unordered_map<std::string, std::string> store;
@@ -94,14 +93,14 @@ struct BoxDb {
 	}
 
 };
-
+*/
 void clEasyRun(const CodeStorage::Storage& stor, const char* configString) {
 
 	ssd::ColorConsole::enableForTerm(STDERR_FILENO);
-
+#ifdef I_DONT_NEED_REPRODUCIBLE_RUNS_OF_FORESTER
 	// initialize random numbers
 	srandom(time(NULL));
-
+#endif
     using namespace CodeStorage;
 
 	CL_DEBUG("config: " << configString);
@@ -143,6 +142,11 @@ void clEasyRun(const CodeStorage::Storage& stor, const char* configString) {
 			CL_ERROR_MSG(e.location(), e.what());
 		else
 			CL_ERROR(e.what());
+	} catch (const NotImplementedException& e) {
+		if (e.location())
+			CL_ERROR_MSG(e.location(), "not implemented: " + std::string(e.what()));
+		else
+			CL_ERROR("not implemented: " + std::string(e.what()));
 	} catch (const std::exception& e) {
 		CL_ERROR(e.what());
 	}

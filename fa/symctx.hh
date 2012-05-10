@@ -20,15 +20,19 @@
 #ifndef SYM_CTX_H
 #define SYM_CTX_H
 
+// Standard library headers
 #include <vector>
 #include <unordered_map>
 
+// Code Listener headers
 #include <cl/storage.hh>
 #include <cl/clutil.hh>
 #include <cl/cl_msg.hh>
 
+// Forester headers
 #include "types.hh"
 #include "nodebuilder.hh"
+#include "notimpl_except.hh"
 
 #define ABP_OFFSET		0
 #define ABP_SIZE		SymCtx::size_of_data
@@ -93,8 +97,11 @@ struct SymCtx {
 					if (var.code == CodeStorage::EVar::VAR_FNC_ARG)
 						++this->argCount;
 					break;
-				default:
+				case CodeStorage::EVar::VAR_GL:
+					throw NotImplementedException("global variables", &(var.loc));
 					break;
+				default:
+					assert(false);
 			}
 
 		}
