@@ -462,7 +462,7 @@ void FI_abs::execute(ExecutionManager& execMan,
 	for (auto& box : boxDBVec)
 	{
 		std::ostringstream ss;
-		ss << *(AbstractBox*)&box << ':' << std::endl << box;
+		ss << *static_cast<const AbstractBox*>(box) << ':' << std::endl << box;
 		execMan.avaiBoxes_.push_back(ss.str());
 	}
 }
