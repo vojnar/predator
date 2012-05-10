@@ -781,9 +781,9 @@ protected:
 	}
 
 
-	static void readStackFrame(const FAE& fae, std::vector<Data>& out)
+	static std::vector<Data> readStackFrame(const FAE& fae)
 	{
-		out = {};
+		std::vector<Data> out;
 		VirtualMachine vm(fae);
 		size_t root = vm.varGet(ABP_INDEX).d_ref.root;
 		assert(root < fae.roots.size());
@@ -871,7 +871,7 @@ protected:
 			fae = ss.str();
 			ta.clear();
 			collectTA(ta,fae);
-			readStackFrame(absTrace[i], out);
+			out = readStackFrame(absTrace[i]);
 			printTAwithvariables(out,vars,ta);
 			std::cerr << msg[i] << std::endl;
 			for (size_t j = 0; j < ta.size(); j++)
@@ -906,7 +906,7 @@ protected:
 			fae = ss.str();
 			ta.clear();
 			Engine::collectTA(ta,fae);
-			readStackFrame(statements[i].first, out);
+			out = readStackFrame(statements[i].first);
 			stacklist.push_back(out);
 			printTAwithvariables(out,vars,ta);
 
