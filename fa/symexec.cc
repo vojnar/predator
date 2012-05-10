@@ -1045,13 +1045,13 @@ protected:
 						absTrace.erase(absTrace.begin() + sizeTrace(state) , absTrace.end());
 						condTrace.erase(condTrace.begin() + sizeTrace(state) - 1, condTrace.end());
 						boxTrace.erase(boxTrace.begin() + sizeTrace(state), boxTrace.end());
-						Engine::printTrace(state, statements);
+						//Engine::printTrace(state, statements);
 						condTrace.push_back(execMan.condStatus_);
 						execMan.condStatus_ = "...";
 					}
 					else
 					{
-						Engine::printTrace(state, statements);
+						//Engine::printTrace(state, statements);
 						// update cond, abs, box traces
 						absTrace.push_back(execMan.absFAEs_);
 						condTrace.push_back(execMan.condStatus_);
