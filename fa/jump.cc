@@ -17,24 +17,29 @@
  * along with forester.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
+// Forester headers
 #include "jump.hh"
 
-void FI_jmp::execute(ExecutionManager&, const AbstractInstruction::StateType&) {
 
+void FI_jmp::execute(ExecutionManager& /* execMan */,
+	const AbstractInstruction::StateType&)
+{
+	// not implemented
 	assert(false);
-
 }
 
-void FI_jmp::finalize(
-	const std::unordered_map<const CodeStorage::Block*, AbstractInstruction*>& codeIndex,
-	std::vector<AbstractInstruction*>::const_iterator
-) {
 
-	this->next_ = this;
+void FI_jmp::finalize(const std::unordered_map<const CodeStorage::Block*,
+	AbstractInstruction*>& codeIndex,
+	std::vector<AbstractInstruction*>::const_iterator)
+{
+	next_ = this;
 
-	while (this->next_->getType() == fi_type_e::fiJump)
-		this->next_ = ((FI_jmp*)this->next_)->getTarget(codeIndex);
+	while (next_->getType() == fi_type_e::fiJump)
+	{
+		next_ = ((FI_jmp*)next_)->getTarget(codeIndex);
+	}
 
-	this->next_->setTarget();
-
+	next_->setTarget();
 }

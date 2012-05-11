@@ -261,7 +261,6 @@ inline void abstract(FAE& fae, TA<label_type>& fwdConf, TA<label_type>::Backend&
 
 	fae.unreachableFree();
 
-//	CL_CDEBUG(1, SSD_INLINE_COLOR(C_LIGHT_GREEN, "after normalization:" ) << std::endl << *fae);
 #if FA_FUSION_ENABLED
 	// merge fixpoint
 	std::vector<FAE*> tmp;
@@ -282,13 +281,12 @@ inline void abstract(FAE& fae, TA<label_type>& fwdConf, TA<label_type>::Backend&
 #endif
 
 	// abstract
-//	CL_CDEBUG("abstracting ... " << 1);
-
 	Abstraction abstraction(fae);
 
 	for (size_t i = 1; i < fae.getRootCount(); ++i)
-//		abstraction.heightAbstraction(i, 1, SmarterTMatchF(fae));
+	{
 		abstraction.heightAbstraction(i, 1, SmartTMatchF());
+	}
 
 	CL_CDEBUG(3, "after abstraction: " << std::endl << fae);
 
@@ -385,7 +383,11 @@ inline void learn2(FAE& fae, BoxMan& boxMan) {
 }
 
 // FI_fix
-void FI_abs::execute(ExecutionManager& execMan, const AbstractInstruction::StateType& state) {
+void FI_abs::execute(ExecutionManager& execMan,
+	const AbstractInstruction::StateType& state)
+{
+	std::vector<FAE> faeList;
+	faeList.clear();
 
 	std::shared_ptr<FAE> fae = std::shared_ptr<FAE>(new FAE(*state.second->fae));
 
@@ -452,6 +454,17 @@ void FI_abs::execute(ExecutionManager& execMan, const AbstractInstruction::State
 
 	}
 
+	execMan.avaiBoxes_ = {};
+
+	std::vector<const Box*> boxDBVec;
+	boxMan.boxDatabase().asVector(boxDBVec);
+
+	for (auto& box : boxDBVec)
+	{
+		std::ostringstream ss;
+		ss << *static_cast<const AbstractBox*>(box) << ':' << std::endl << box;
+		execMan.avaiBoxes_.push_back(ss.str());
+	}
 }
 
 // FI_fix

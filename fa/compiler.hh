@@ -200,9 +200,10 @@ public:
 	 * @param[out]  assembly  The output assembly code
 	 * @param[in]   stor      The code storage to be compiled
 	 * @param[in]   entry     The entry point of the program
+	 * @param[out]  vars      The vector of variables
 	 */
 	void compile(Assembly& assembly, const CodeStorage::Storage &stor,
-		const CodeStorage::Fnc& entry);
+		const CodeStorage::Fnc& entry, std::vector<std::string>& vars);
 
 private:
 
